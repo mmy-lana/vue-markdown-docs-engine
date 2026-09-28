@@ -1,4 +1,6 @@
 <script lang="ts">
+import { lockBodyScroll, unlockBodyScroll } from '@/composables/useBodyScrollLock';
+
 /**
  * Module-scoped dialog registry.
  *
@@ -22,12 +24,6 @@ const FOCUSABLE_SELECTOR = [
 /** Stack of open dialogs, innermost last. */
 const dialogStack: symbol[] = [];
 
-/** Number of dialogs currently holding the background scroll lock. */
-let openDialogCount = 0;
-
-/** The page's own `overflow` value, captured before the first dialog opened. */
-let previousBodyOverflow = '';
-
 export function isTopmostDialog(token: symbol): boolean {
   return dialogStack[dialogStack.length - 1] === token;
 }
@@ -45,28 +41,6 @@ export function popDialog(token: symbol): void {
   }
 }
 
-/**
- * Reference-counted background scroll lock.
- *
- * The search palette and the editor can be open at the same time. The first
- * dialog to open takes the lock and the last one to close releases it, so a
- * nested dialog can never restore the page to a scrollable state while an
- * outer dialog is still up.
- */
-export function lockBodyScroll(): void {
-  if (openDialogCount === 0) {
-    previousBodyOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-  }
-  openDialogCount += 1;
-}
-
-export function unlockBodyScroll(): void {
-  openDialogCount = Math.max(0, openDialogCount - 1);
-  if (openDialogCount === 0) {
-    document.body.style.overflow = previousBodyOverflow;
-  }
-}
 </script>
 
 <script setup lang="ts">

@@ -6,7 +6,21 @@ import MarkdownIt, {
   type Token
 } from 'markdown-it';
 import markdownItAnchor from 'markdown-it-anchor';
-import { createHighlighter, type Highlighter } from 'shiki';
+import { createHighlighterCore, type HighlighterCore } from 'shiki/core';
+import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
+import bashLang from 'shiki/langs/bash.mjs';
+import cssLang from 'shiki/langs/css.mjs';
+import diffLang from 'shiki/langs/diff.mjs';
+import htmlLang from 'shiki/langs/html.mjs';
+import javascriptLang from 'shiki/langs/javascript.mjs';
+import jsonLang from 'shiki/langs/json.mjs';
+import markdownLang from 'shiki/langs/markdown.mjs';
+import sqlLang from 'shiki/langs/sql.mjs';
+import typescriptLang from 'shiki/langs/typescript.mjs';
+import vueLang from 'shiki/langs/vue.mjs';
+import yamlLang from 'shiki/langs/yaml.mjs';
+import githubDarkTheme from 'shiki/themes/github-dark.mjs';
+import githubLightTheme from 'shiki/themes/github-light.mjs';
 import DOMPurify from 'dompurify';
 import YAML from 'yaml';
 import type { CompiledDoc, DocFrontmatter, DocHeading, DocItem } from '@/types';
@@ -24,23 +38,28 @@ const TRACKED_HEADING_LEVELS = new Set<number>([2, 3, 4]);
 /** Class applied to every rendered heading so it clears the sticky header. */
 const HEADING_CLASS = 'doc-heading';
 
-/** Languages bundled with the engine. A fence naming anything else falls back. */
+/**
+ * Languages bundled with the engine. A fence naming anything else falls back
+ * to plain text.
+ *
+ * Imported one module at a time rather than from the `shiki` barrel, which
+ * would pull every bundled grammar and theme into the build output.
+ */
 const HIGHLIGHT_LANGUAGES = [
-  'javascript',
-  'typescript',
-  'vue',
-  'json',
-  'bash',
-  'markdown',
-  'html',
-  'css',
-  'yaml',
-  'diff',
-  'sql'
+  javascriptLang,
+  typescriptLang,
+  vueLang,
+  jsonLang,
+  bashLang,
+  markdownLang,
+  htmlLang,
+  cssLang,
+  yamlLang,
+  diffLang,
+  sqlLang
 ] as const;
 
-const LIGHT_THEME = 'github-light';
-const DARK_THEME = 'github-dark';
+const HIGHLIGHT_THEMES = [githubLightTheme, githubDarkTheme] as const;
 
 /**
  * The single MarkdownIt configuration used by every parsing path.
@@ -205,16 +224,20 @@ export function extractHeadingsSync(body: string): DocHeading[] {
  * initialisation race: two documents compiled at the same moment await the
  * same bundle instead of each constructing their own WebAssembly instance.
  */
-let highlighterPromise: Promise<Highlighter | null> | null = null;
+let highlighterPromise: Promise<HighlighterCore | null> | null = null;
 
 /** Languages available to the current highlighter, as a fast lookup set. */
 let loadedLanguages = new Set<string>();
 
-function getHighlighter(): Promise<Highlighter | null> {
+function getHighlighter(): Promise<HighlighterCore | null> {
   if (highlighterPromise === null) {
-    highlighterPromise = createHighlighter({
-      themes: [LIGHT_THEME, DARK_THEME],
-      langs: [...HIGHLIGHT_LANGUAGES]
+    highlighterPromise = createHighlighterCore({
+      themes: [...HIGHLIGHT_THEMES],
+      langs: [...HIGHLIGHT_LANGUAGES],
+      // The pure-JavaScript regex engine avoids shipping the ~600 kB Oniguruma
+      // WebAssembly binary. For the syntax this engine highlights the
+      // difference is not perceptible, and the download is not.
+      engine: createJavaScriptRegexEngine()
     })
       .then((highlighter) => {
         loadedLanguages = new Set(highlighter.getLoadedLanguages());
@@ -222,8 +245,8 @@ function getHighlighter(): Promise<Highlighter | null> {
       })
       .catch((cause: unknown) => {
         // Highlighting is an enhancement, not a requirement. A blocked or
-        // failed WebAssembly load degrades every fence to plain text instead
-        // of failing the whole document.
+        // failed grammar load degrades every fence to plain text instead of
+        // failing the whole document.
         console.error('[vue-docs-engine] Syntax highlighting is unavailable:', cause);
         return null;
       });
@@ -254,7 +277,7 @@ function renderPlainFence(language: string, code: string): string {
 
 /** Renders a highlighted fence inside the engine's code card. */
 function renderHighlightedFence(
-  highlighter: Highlighter,
+  highlighter: HighlighterCore,
   language: string,
   code: string
 ): string {
@@ -263,7 +286,7 @@ function renderHighlightedFence(
   // when the visitor toggles the theme.
   const highlighted = highlighter.codeToHtml(code, {
     lang: language,
-    themes: { light: LIGHT_THEME, dark: DARK_THEME },
+    themes: { light: 'github-light', dark: 'github-dark' },
     defaultColor: false
   });
 
@@ -283,7 +306,7 @@ function renderHighlightedFence(
  * counters and heading callback isolated from any concurrent compile.
  */
 function createDocumentParser(
-  highlighter: Highlighter | null,
+  highlighter: HighlighterCore | null,
   headings: DocHeading[]
 ): MarkdownItInstance {
   const md = new MarkdownIt(MARKDOWN_PARSER_OPTIONS);

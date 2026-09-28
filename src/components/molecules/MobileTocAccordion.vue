@@ -73,6 +73,7 @@ function toggle(): void {
       class="flex min-h-11 w-full items-center justify-between gap-2 px-4 py-2.5 text-left text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 dark:text-slate-100 dark:hover:bg-slate-800"
       :aria-expanded="isExpanded"
       :aria-controls="panelId"
+      data-testid="toc-accordion-toggle"
       @click="toggle"
     >
       <span>On this page</span>

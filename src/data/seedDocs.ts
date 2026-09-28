@@ -241,7 +241,7 @@ const MARKDOWN_RENDERING = dedent(`
   lastModified: 2026-01-20
   ---
 
-  Compiling a document is asynchronous because syntax highlighting loads a WebAssembly grammar bundle on first use. The result is cached, so only the first document in a session pays the cost.
+  Compiling a document is asynchronous because syntax highlighting loads a grammar bundle on first use. The result is cached, so only the first document in a session pays the cost. Highlighting is provided by [Shiki](https://shiki.style), driven from its fine-grained core entry point.
 
   ## The compile pipeline
 

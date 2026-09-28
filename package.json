@@ -9,7 +9,8 @@
     "typecheck": "vue-tsc --noEmit",
     "verify:modal": "vite build --config tests/vite.modal.config.ts --logLevel warn && node tests/modal/verify-modal.mjs",
     "verify:parser": "vite build --config tests/vite.parser.config.ts --logLevel warn && node tests/parser/verify-parser.mjs",
-    "verify": "pnpm run verify:modal && pnpm run verify:parser"
+    "verify": "pnpm run build && pnpm run verify:modal && pnpm run verify:parser && pnpm run verify:e2e",
+    "verify:e2e": "node scripts/verify-e2e.mjs"
   },
   "dependencies": {
     "dompurify": "latest",

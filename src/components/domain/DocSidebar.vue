@@ -4,15 +4,11 @@ import { useDocNavigation } from '@/composables/useDocNavigation';
 /**
  * The document navigation rail.
  *
- * Rendered inside a fixed column on `lg` and above. Below that the layout
- * slides the same markup in as a drawer, so the navigation is written once
- * and the two presentations differ only in positioning.
+ * One instance serves both presentations: the layout keeps it in a fixed
+ * column from `lg` up and slides the same element in as a drawer below that.
+ * The drawer header is hidden at `lg` by CSS, so the markup is written once
+ * and there is only ever one `nav` landmark in the document.
  */
-defineProps<{
-  /** Whether the drawer presentation is active below the `lg` breakpoint. */
-  isDrawerOpen: boolean;
-}>();
-
 const emit = defineEmits<{
   (event: 'close'): void;
 }>();
@@ -23,7 +19,6 @@ const { groups, currentSlug } = useDocNavigation();
 <template>
   <nav aria-label="Documentation" class="flex h-full min-h-0 flex-col">
     <div
-      v-if="isDrawerOpen"
       class="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-4 dark:border-slate-800 lg:hidden"
     >
       <span class="text-sm font-semibold text-slate-900 dark:text-slate-100">Navigation</span>

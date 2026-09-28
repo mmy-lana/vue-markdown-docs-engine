@@ -282,7 +282,17 @@ function onDelete(): void {
           "
           @click="selectTab(tab)"
         >
-          {{ tab === 'write' ? 'Write' : 'Preview' }}
+          <span class="inline-flex items-center gap-1.5">
+            {{ tab === 'write' ? 'Write' : 'Preview' }}
+            <span
+              v-if="tab === 'preview' && previewError"
+              class="size-1.5 rounded-full bg-rose-500"
+              data-testid="preview-error-dot"
+            />
+            <span v-if="tab === 'preview' && previewError" class="sr-only">
+              (the preview has an error)
+            </span>
+          </span>
         </button>
       </div>
 
@@ -291,8 +301,8 @@ function onDelete(): void {
           id="editor-panel-write"
           role="tabpanel"
           aria-labelledby="editor-tab-write"
-          :hidden="activeTab !== 'write'"
-          class="flex min-h-0 flex-col p-4"
+          class="min-h-0 flex-col p-4 md:flex"
+          :class="activeTab === 'write' ? 'flex' : 'hidden md:flex'"
         >
           <BaseTextarea
             v-model="content"
@@ -310,8 +320,8 @@ function onDelete(): void {
           id="editor-panel-preview"
           role="tabpanel"
           aria-labelledby="editor-tab-preview"
-          :hidden="activeTab !== 'preview'"
-          class="flex min-h-0 flex-col overflow-y-auto border-t border-slate-200 p-4 md:border-t-0 md:border-l dark:border-slate-800"
+          class="min-h-0 flex-col overflow-y-auto border-t border-slate-200 p-4 md:flex md:border-t-0 md:border-l dark:border-slate-800"
+          :class="activeTab === 'preview' ? 'flex' : 'hidden md:flex'"
         >
           <div
             v-if="previewError"

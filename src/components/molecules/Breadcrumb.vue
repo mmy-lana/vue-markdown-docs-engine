@@ -23,7 +23,7 @@ defineProps<{
       <li class="flex items-center gap-2">
         <router-link
           to="/"
-          class="rounded transition-colors hover:text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+          class="inline-flex min-h-11 min-w-11 items-center justify-center rounded transition-colors hover:text-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           Docs
         </router-link>
