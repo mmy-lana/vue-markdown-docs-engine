@@ -26,6 +26,28 @@
   scroll-margin-top: 5rem;
 }
 
+/* Motion primitives. Both are opted out via motion-safe: at their call sites. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUpFromBottom {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
 /* Shiki Dual-Theme Token Rules */
 html.dark .shiki,
 html.dark .shiki span {

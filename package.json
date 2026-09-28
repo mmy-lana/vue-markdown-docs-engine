@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "verify:modal": "vite build --config tests/vite.modal.config.ts --logLevel warn && node tests/modal/verify-modal.mjs"
   },
   "dependencies": {
     "dompurify": "latest",
@@ -22,6 +23,7 @@
     "@tailwindcss/vite": "latest",
     "@types/node": "^26.6.3",
     "@vitejs/plugin-vue": "latest",
+    "playwright": "^1.63.0",
     "tailwindcss": "latest",
     "typescript": "6.0.0-beta",
     "vite": "latest",

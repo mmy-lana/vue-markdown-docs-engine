@@ -9,6 +9,9 @@ dist
 dist-ssr
 *.local
 
+# Test fixture build output
+tests/.modal-dist
+
 # Environment
 .env
 .env.local
