@@ -7,7 +7,9 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "verify:modal": "vite build --config tests/vite.modal.config.ts --logLevel warn && node tests/modal/verify-modal.mjs"
+    "verify:modal": "vite build --config tests/vite.modal.config.ts --logLevel warn && node tests/modal/verify-modal.mjs",
+    "verify:parser": "vite build --config tests/vite.parser.config.ts --logLevel warn && node tests/parser/verify-parser.mjs",
+    "verify": "pnpm run verify:modal && pnpm run verify:parser"
   },
   "dependencies": {
     "dompurify": "latest",

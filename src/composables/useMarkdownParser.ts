@@ -1,7 +1,16 @@
-import MarkdownIt, { type MarkdownItOptions, type Token } from 'markdown-it';
+import { ref } from 'vue';
+import MarkdownIt, {
+  type MarkdownIt as MarkdownItInstance,
+  type MarkdownItOptions,
+  type RendererRule,
+  type Token
+} from 'markdown-it';
+import markdownItAnchor from 'markdown-it-anchor';
+import { createHighlighter, type Highlighter } from 'shiki';
+import DOMPurify from 'dompurify';
 import YAML from 'yaml';
-import type { DocFrontmatter, DocHeading } from '@/types';
-import { SLUG_REGEX, createSlugifier } from '@/types';
+import type { CompiledDoc, DocFrontmatter, DocHeading, DocItem } from '@/types';
+import { SLUG_REGEX, WORDS_PER_MINUTE, createSlugifier } from '@/types';
 
 /**
  * Frontmatter fence: `---\n<yaml>\n---\n<body>`. Both LF and CRLF line endings
@@ -11,6 +20,27 @@ const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
 /** Heading levels that are surfaced in the table of contents and search index. */
 const TRACKED_HEADING_LEVELS = new Set<number>([2, 3, 4]);
+
+/** Class applied to every rendered heading so it clears the sticky header. */
+const HEADING_CLASS = 'doc-heading';
+
+/** Languages bundled with the engine. A fence naming anything else falls back. */
+const HIGHLIGHT_LANGUAGES = [
+  'javascript',
+  'typescript',
+  'vue',
+  'json',
+  'bash',
+  'markdown',
+  'html',
+  'css',
+  'yaml',
+  'diff',
+  'sql'
+] as const;
+
+const LIGHT_THEME = 'github-light';
+const DARK_THEME = 'github-dark';
 
 /**
  * The single MarkdownIt configuration used by every parsing path.
@@ -166,4 +196,202 @@ export function extractHeadingsSync(body: string): DocHeading[] {
   }
 
   return headings;
+}
+
+/**
+ * In-flight or resolved highlighter, shared across the whole application.
+ *
+ * Caching the promise rather than the resolved value is what removes the
+ * initialisation race: two documents compiled at the same moment await the
+ * same bundle instead of each constructing their own WebAssembly instance.
+ */
+let highlighterPromise: Promise<Highlighter | null> | null = null;
+
+/** Languages available to the current highlighter, as a fast lookup set. */
+let loadedLanguages = new Set<string>();
+
+function getHighlighter(): Promise<Highlighter | null> {
+  if (highlighterPromise === null) {
+    highlighterPromise = createHighlighter({
+      themes: [LIGHT_THEME, DARK_THEME],
+      langs: [...HIGHLIGHT_LANGUAGES]
+    })
+      .then((highlighter) => {
+        loadedLanguages = new Set(highlighter.getLoadedLanguages());
+        return highlighter;
+      })
+      .catch((cause: unknown) => {
+        // Highlighting is an enhancement, not a requirement. A blocked or
+        // failed WebAssembly load degrades every fence to plain text instead
+        // of failing the whole document.
+        console.error('[vue-docs-engine] Syntax highlighting is unavailable:', cause);
+        return null;
+      });
+  }
+
+  return highlighterPromise;
+}
+
+/** Escapes text for safe interpolation into an HTML text node. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Renders a fence when no highlighter is available. */
+function renderPlainFence(language: string, code: string): string {
+  return `<div class="not-prose doc-code-card my-6 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex h-11 items-center justify-between border-b border-slate-200 bg-slate-100 px-4 font-mono text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      <span>${escapeHtml(language)}</span>
+      <button type="button" class="doc-code-copy-btn inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center font-sans text-xs font-medium text-slate-600 hover:text-brand-500 dark:text-slate-300" data-clipboard="${encodeURIComponent(code)}" aria-label="Copy code block">Copy</button>
+    </div>
+    <div class="overflow-x-auto text-sm"><pre class="m-0 p-4 font-mono"><code>${escapeHtml(code)}</code></pre></div>
+  </div>`;
+}
+
+/** Renders a highlighted fence inside the engine's code card. */
+function renderHighlightedFence(
+  highlighter: Highlighter,
+  language: string,
+  code: string
+): string {
+  // `defaultColor: false` emits both palettes as CSS custom properties, which
+  // `style.css` swaps on the `dark` class. No JavaScript re-render is needed
+  // when the visitor toggles the theme.
+  const highlighted = highlighter.codeToHtml(code, {
+    lang: language,
+    themes: { light: LIGHT_THEME, dark: DARK_THEME },
+    defaultColor: false
+  });
+
+  return `<div class="not-prose doc-code-card my-6 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex h-11 items-center justify-between border-b border-slate-200 bg-slate-100 px-4 font-mono text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+      <span>${escapeHtml(language)}</span>
+      <button type="button" class="doc-code-copy-btn inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center font-sans text-xs font-medium text-slate-600 hover:text-brand-500 dark:text-slate-300" data-clipboard="${encodeURIComponent(code)}" aria-label="Copy code block">Copy</button>
+    </div>
+    <div class="overflow-x-auto text-sm">${highlighted}</div>
+  </div>`;
+}
+
+/**
+ * Builds a MarkdownIt instance configured for document rendering.
+ *
+ * A fresh instance per compile keeps the anchor plugin's per-document slug
+ * counters and heading callback isolated from any concurrent compile.
+ */
+function createDocumentParser(
+  highlighter: Highlighter | null,
+  headings: DocHeading[]
+): MarkdownItInstance {
+  const md = new MarkdownIt(MARKDOWN_PARSER_OPTIONS);
+
+  md.renderer.rules.fence = (
+    tokens: Token[],
+    index: number
+  ): string => {
+    const token = tokens[index];
+    if (token === undefined) return '';
+
+    const requested = token.info.trim().split(/\s+/)[0] ?? '';
+    const language = requested.length > 0 ? requested : 'text';
+    const code = token.content;
+    const isKnown = loadedLanguages.has(language);
+
+    if (highlighter === null || !isKnown) {
+      return renderPlainFence(isKnown ? language : (requested.length > 0 ? requested : 'text'), code);
+    }
+
+    return renderHighlightedFence(highlighter, language, code);
+  };
+
+  // Scroll-linked headings must clear the 64px sticky header, which the
+  // `.doc-heading` utility provides via scroll-margin-top.
+  const headingOpenRule: RendererRule = (tokens, index, options, _env, self) => {
+    const token = tokens[index];
+    if (token !== undefined) {
+      const existing = token.attrGet('class');
+      token.attrSet('class', existing !== null ? `${existing} ${HEADING_CLASS}` : HEADING_CLASS);
+    }
+    return self.renderToken(tokens, index, options);
+  };
+  md.renderer.rules.heading_open = headingOpenRule;
+
+  md.use(markdownItAnchor, {
+    slugify: createSlugifier(),
+    getTokensText: extractInlineText,
+    permalink: markdownItAnchor.permalink.linkInsideHeader({
+      symbol: '#',
+      class: 'heading-anchor ml-2 hidden text-slate-400 no-underline hover:text-brand-500 md:inline-flex dark:text-slate-500',
+      placement: 'after',
+      ariaHidden: false
+    }),
+    callback: (token: Token, info: { slug: string; title: string }): void => {
+      const level = Number(token.tag.replace('h', ''));
+      if (!TRACKED_HEADING_LEVELS.has(level)) return;
+      headings.push({ id: info.slug, text: info.title, level: level as DocHeading['level'] });
+    }
+  });
+
+  // Wide tables get their own scroll container so a grid never widens the
+  // page on a narrow viewport.
+  md.renderer.rules.table_open = (tokens, index, options, _env, self) =>
+    `<div class="my-6 overflow-x-auto">\n${self.renderToken(tokens, index, options)}`;
+  md.renderer.rules.table_close = (tokens, index, options, _env, self) =>
+    `${self.renderToken(tokens, index, options)}\n</div>`;
+
+  return md;
+}
+
+/**
+ * Compiles a stored document into sanitized, dual-theme HTML.
+ *
+ * The heading table is produced by the same slugifier and the same inline text
+ * extraction that `extractHeadingsSync` uses, so the table of contents stored
+ * with the document always matches the anchors in the rendered output.
+ *
+ * @throws {Error} When the document's frontmatter is missing or invalid.
+ */
+export function useMarkdownParser() {
+  const isCompiling = ref(false);
+
+  async function compileDoc(doc: DocItem): Promise<CompiledDoc> {
+    isCompiling.value = true;
+    try {
+      const { body } = extractFrontmatterSync(doc.rawContent);
+      const headings: DocHeading[] = [];
+      const highlighter = await getHighlighter();
+      const md = createDocumentParser(highlighter, headings);
+
+      const rawHtml = md.render(body);
+      const htmlContent = DOMPurify.sanitize(rawHtml, {
+        ADD_ATTR: ['data-clipboard', 'target', 'rel'],
+        ADD_TAGS: ['button'],
+        // `style` is deliberately permitted: with `html: false` a document can
+        // never author markup, so the only inline styles present are the dual
+        // theme colour variables Shiki emits. Forbidding them would render
+        // every code block colourless.
+        FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form'],
+        FORBID_ATTR: ['srcset', 'formaction']
+      });
+
+      const words = body.trim().split(/\s+/).filter((word) => word.length > 0).length;
+
+      return {
+        ...doc,
+        htmlContent,
+        headings,
+        readingTimeMinutes: Math.max(1, Math.ceil(words / WORDS_PER_MINUTE))
+      };
+    } finally {
+      isCompiling.value = false;
+    }
+  }
+
+  return {
+    compileDoc,
+    isCompiling
+  };
 }

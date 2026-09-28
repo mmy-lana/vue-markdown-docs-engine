@@ -7,7 +7,11 @@ import { computed } from 'vue';
  * Shares the input primitive's accessibility contract: a real `label`, an
  * `aria-describedby` link to the hint or error, and `text-base` so mobile
  * Safari does not zoom on focus.
+ *
+ * Fallthrough attributes are forwarded to the real `<textarea>` rather than
+ * the label wrapper, matching `BaseInput`.
  */
+defineOptions({ inheritAttrs: false });
 
 const model = defineModel<string>({ default: '' });
 
@@ -71,6 +75,7 @@ const describedBy = computed<string | undefined>(() => {
     </label>
 
     <textarea
+      v-bind="$attrs"
       :id="id"
       v-model="model"
       :rows="rows"

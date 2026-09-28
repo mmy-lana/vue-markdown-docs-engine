@@ -11,6 +11,7 @@ dist-ssr
 
 # Test fixture build output
 tests/.modal-dist
+tests/.parser-dist
 
 # Environment
 .env
