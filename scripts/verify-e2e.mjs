@@ -89,16 +89,25 @@ const HEADER_HEIGHT = 64;
 /**
  * Asserts the navigation rail starts below the sticky header.
  *
- * Regression guard for the desktop sidebar/header collision: the rail was
- * pinned to top:0 by an `inset-y-0` shorthand while its inner container
- * removed the only offset, so the first entry rendered behind the
- * translucent header. Horizontal checks cannot see that, so the vertical
- * boundary is asserted directly.
+ * Regression guard for the desktop sidebar/header collision.
+ *
+ * The selector is scoped to the rail on purpose. `[data-testid^="nav-"]` on its
+ * own also matches the header's `nav-toggle` button, which is display:none from
+ * `lg` up, so an unscoped first match resolves to a hidden element and the
+ * bounding box comes back null.
+ *
+ * Within the rail, entries are checked in document order rather than by name.
+ * Category groups sort alphabetically, so the topmost link belongs to whichever
+ * group sorts first and moves whenever a category is renamed. Asserting a
+ * fixed slug checks a link several rows down and would pass while the real top
+ * of the rail was occluded.
  */
 async function assertSidebarClearsHeader(page, label) {
   const headerBox = await page.locator('header').first().boundingBox();
   const railBox = await page.locator('[data-testid="sidebar-rail"]').boundingBox();
-  const firstEntryBox = await page.locator('[data-testid="nav-getting-started"]').boundingBox();
+  const railItems = page.locator('[data-testid="sidebar-rail"] [data-testid^="nav-"]');
+  const firstItem = railItems.first();
+  const firstEntryBox = await firstItem.boundingBox();
 
   check(`${label}: the header is the expected 64px tall`,
     headerBox !== null && Math.abs(headerBox.height - HEADER_HEIGHT) < 1,
@@ -106,17 +115,15 @@ async function assertSidebarClearsHeader(page, label) {
   check(`${label}: the navigation rail starts below the header`,
     railBox !== null && railBox.y >= HEADER_HEIGHT - 1, JSON.stringify(railBox));
   check(`${label}: the first navigation entry is at or below 64px`,
-    firstEntryBox !== null && firstEntryBox.y >= HEADER_HEIGHT, JSON.stringify(firstEntryBox));
+    firstEntryBox !== null && firstEntryBox.y >= HEADER_HEIGHT,
+    JSON.stringify(firstEntryBox));
+
   check(`${label}: the rail does not overlap the header`,
     railBox !== null && headerBox !== null && railBox.y >= headerBox.height - 1,
     JSON.stringify({ rail: railBox, header: headerBox }));
 
-  // Every rendered entry, not just the one named above. The first entry in
-  // document order is the tightest case and is the one that regressed: the
-  // rail was pinned to top:0 while its inner container removed the only
-  // offset, so the whole top group rendered behind the translucent header.
   const entries = await page.evaluate(() =>
-    [...document.querySelectorAll('[data-testid^="nav-"]')]
+    [...document.querySelectorAll('[data-testid="sidebar-rail"] [data-testid^="nav-"]')]
       .map((el) => ({
         id: el.getAttribute('data-testid'),
         y: el.getBoundingClientRect().top,
@@ -127,24 +134,54 @@ async function assertSidebarClearsHeader(page, label) {
 
   check(`${label}: the rail renders at least one navigation entry`, entries.length > 0, String(entries.length));
 
-  const first = entries[0];
+  const topmost = entries[0];
+  check(`${label}: the asserted entry really is the topmost one`,
+    topmost !== undefined && firstEntryBox !== null &&
+      Math.round(firstEntryBox.y) === Math.round(topmost.y),
+    JSON.stringify({ asserted: firstEntryBox, topmost }));
+
   check(`${label}: the topmost navigation entry starts at or below 64px`,
-    first !== undefined && first.y >= HEADER_HEIGHT, JSON.stringify(first));
+    topmost !== undefined && topmost.y >= HEADER_HEIGHT, JSON.stringify(topmost));
 
   const intruders = entries.filter((entry) => entry.y < HEADER_HEIGHT);
   check(`${label}: no navigation entry renders inside the header band`,
     intruders.length === 0,
     JSON.stringify(intruders.map((e) => `${e.id}@${Math.round(e.y)}`)));
 
-  // Independent of layout maths: confirm the header owns the pixels a reader
-  // would click in that band, rather than the rail bleeding through.
+  // Independent of layout maths: the header must own the pixels a reader would
+  // click in that band, rather than rail content bleeding through it.
   const topOfBand = await page.evaluate(() => {
     const header = document.querySelector('header');
     const element = document.elementFromPoint(header.getBoundingClientRect().width / 2, 20);
     return element === null ? 'null' : (element.closest('header') !== null ? 'header' : 'other');
   });
-  check(`${label}: the header owns the 20px band rather than the rail bleeding through`,
+  check(`${label}: the header owns the 20px band`,
     topOfBand === 'header', topOfBand);
+}
+
+/**
+ * Waits for the drawer to finish sliding.
+ *
+ * The rail carries a 200ms transform transition, so a fixed sleep after the
+ * click races the animation: the class flips immediately while the box is
+ * still on screen. Waiting on the settled position removes the flake.
+ */
+async function waitForDrawer(page, open) {
+  await page.waitForFunction(
+    (wantOpen) => {
+      const rail = document.querySelector('[data-testid="sidebar-rail"]');
+      if (rail === null) return false;
+      const box = rail.getBoundingClientRect();
+      // "Open" is the rail on screen. "Closed" is the rail fully off screen,
+      // not merely moved: a sliding rail passes x < 0 immediately, so any
+      // weaker test returns while the 200ms transition is still running.
+      const onScreen = box.x >= -1;
+      const fullyOffScreen = box.x + box.width <= 1;
+      return wantOpen ? onScreen : fullyOffScreen;
+    },
+    open,
+    { timeout: 5000 }
+  );
 }
 
 const noHorizontalScroll = (page) =>
@@ -195,8 +232,38 @@ const noHorizontalScroll = (page) =>
   section('[390px] every touch target clears 44px');
   const { context, page, pageErrors } = await openApp(390, 844);
 
+  // The drawer is the primary navigation at this width, so it is opened
+  // explicitly rather than relied upon to be open on arrival.
   await page.locator('[data-testid="nav-toggle"]').click();
-  await page.waitForTimeout(350);
+  await waitForDrawer(page, true);
+
+  // Escape must dismiss the drawer, release the scroll lock and hand focus
+  // back to the control that opened it. It is exercised before the target
+  // sweep because the open drawer covers that control.
+  const drawerIsOnScreen = () =>
+    page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="sidebar-rail"]');
+      return rail !== null && rail.getBoundingClientRect().x >= -1;
+    });
+
+  check('the drawer is open on arrival at 390px', await drawerIsOnScreen());
+  check('focus entered the drawer when it opened', await page.evaluate(() => {
+    const rail = document.querySelector('[data-testid="sidebar-rail"]');
+    return rail !== null && document.activeElement !== null && rail.contains(document.activeElement);
+  }));
+
+  await page.keyboard.press('Escape');
+  await waitForDrawer(page, false);
+  check('Escape dismisses the drawer', (await drawerIsOnScreen()) === false);
+  check('Escape releases the body scroll lock',
+    (await page.evaluate(() => document.body.style.overflow)) === '');
+  check('focus returns to the navigation toggle after Escape',
+    (await page.evaluate(() => document.activeElement?.getAttribute('data-testid'))) === 'nav-toggle',
+    await page.evaluate(() => document.activeElement?.id ?? document.activeElement?.tagName ?? 'none'));
+
+  // Re-open for the touch-target sweep across the drawer's controls.
+  await page.locator('[data-testid="nav-toggle"]').click();
+  await waitForDrawer(page, true);
 
   const tooSmall = await page.evaluate(() => {
     // `pre` carries Shiki's tabindex so it can be scrolled by keyboard; it is
@@ -281,7 +348,7 @@ const noHorizontalScroll = (page) =>
   check('the rail exists even when the drawer is closed', (await rail.count()) === 1);
 
   await page.locator('[data-testid="nav-toggle"]').click();
-  await page.waitForTimeout(350);
+  await waitForDrawer(page, true);
   check('the drawer slides in', await rail.isVisible());
   const openDrawerBox = await rail.boundingBox();
   check('the drawer is on screen when open',
@@ -291,10 +358,35 @@ const noHorizontalScroll = (page) =>
   check('the active document is marked in the drawer',
     (await page.getAttribute('[data-testid="nav-getting-started"]', 'aria-current')) === 'page');
 
+  // Keyboard lifecycle. The drawer is a modal overlay, so it behaves like one:
+  // it takes focus, keeps it, and hands it back on the way out.
+  const focusIsInDrawer = () =>
+    page.evaluate(() => {
+      const railEl = document.querySelector('[data-testid="sidebar-rail"]');
+      return railEl !== null && document.activeElement !== null && railEl.contains(document.activeElement);
+    });
+
+  check('opening the drawer moves focus into it', await focusIsInDrawer());
+
+  const tabStaysInside = [];
+  for (let i = 0; i < 14; i += 1) {
+    await page.keyboard.press('Tab');
+    tabStaysInside.push(await focusIsInDrawer());
+  }
+  check('Tab never escapes the drawer', tabStaysInside.every(Boolean),
+    JSON.stringify(tabStaysInside));
+
+  const scrimBg = await page.evaluate(() => {
+    const scrim = document.querySelector('[data-testid="nav-scrim"]');
+    return scrim === null ? null : getComputedStyle(scrim).backgroundColor;
+  });
+  check('the drawer scrim is painted', scrimBg !== null && scrimBg !== 'rgba(0, 0, 0, 0)',
+    String(scrimBg));
+
   await page.locator('[data-testid="nav-local-storage"]').click();
   await page.waitForFunction(() => window.location.pathname === '/docs/local-storage');
   check('a drawer link navigates', page.url().endsWith('/docs/local-storage'));
-  await page.waitForTimeout(350);
+  await waitForDrawer(page, false);
   const drawerBox = await rail.boundingBox();
   check('the drawer slides back off screen after navigating',
     drawerBox !== null && drawerBox.x + drawerBox.width <= 1, JSON.stringify(drawerBox));

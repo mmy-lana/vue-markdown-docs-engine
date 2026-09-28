@@ -32,6 +32,15 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <!--
+      Inline icon. Declaring one stops the browser issuing its own
+      /favicon.ico request, which is otherwise a 404 in the console on every
+      cold load. A data URI keeps it out of the request path entirely.
+    -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230284c7'/%3E%3Cpath d='M10 9h8a5 5 0 0 1 5 5v9H15a5 5 0 0 1-5-5V9Z' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3Cpath d='M14 14h5M14 18h5' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
     <script>
       (function () {
         try {
