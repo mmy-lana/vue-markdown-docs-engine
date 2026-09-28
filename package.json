@@ -9,20 +9,21 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "vue": "latest",
-    "vue-router": "latest",
+    "dompurify": "latest",
     "markdown-it": "latest",
     "markdown-it-anchor": "latest",
     "shiki": "latest",
-    "dompurify": "latest",
+    "vue": "latest",
+    "vue-router": "latest",
     "yaml": "latest"
   },
   "devDependencies": {
     "@tailwindcss/typography": "latest",
     "@tailwindcss/vite": "latest",
+    "@types/node": "^26.6.3",
     "@vitejs/plugin-vue": "latest",
     "tailwindcss": "latest",
-    "typescript": "latest",
+    "typescript": "6.0.0-beta",
     "vite": "latest",
     "vue-tsc": "latest"
   }
