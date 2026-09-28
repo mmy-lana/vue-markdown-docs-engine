@@ -84,6 +84,69 @@ async function openApp(width, height = 900) {
   return { context, page, pageErrors };
 }
 
+const HEADER_HEIGHT = 64;
+
+/**
+ * Asserts the navigation rail starts below the sticky header.
+ *
+ * Regression guard for the desktop sidebar/header collision: the rail was
+ * pinned to top:0 by an `inset-y-0` shorthand while its inner container
+ * removed the only offset, so the first entry rendered behind the
+ * translucent header. Horizontal checks cannot see that, so the vertical
+ * boundary is asserted directly.
+ */
+async function assertSidebarClearsHeader(page, label) {
+  const headerBox = await page.locator('header').first().boundingBox();
+  const railBox = await page.locator('[data-testid="sidebar-rail"]').boundingBox();
+  const firstEntryBox = await page.locator('[data-testid="nav-getting-started"]').boundingBox();
+
+  check(`${label}: the header is the expected 64px tall`,
+    headerBox !== null && Math.abs(headerBox.height - HEADER_HEIGHT) < 1,
+    JSON.stringify(headerBox));
+  check(`${label}: the navigation rail starts below the header`,
+    railBox !== null && railBox.y >= HEADER_HEIGHT - 1, JSON.stringify(railBox));
+  check(`${label}: the first navigation entry is at or below 64px`,
+    firstEntryBox !== null && firstEntryBox.y >= HEADER_HEIGHT, JSON.stringify(firstEntryBox));
+  check(`${label}: the rail does not overlap the header`,
+    railBox !== null && headerBox !== null && railBox.y >= headerBox.height - 1,
+    JSON.stringify({ rail: railBox, header: headerBox }));
+
+  // Every rendered entry, not just the one named above. The first entry in
+  // document order is the tightest case and is the one that regressed: the
+  // rail was pinned to top:0 while its inner container removed the only
+  // offset, so the whole top group rendered behind the translucent header.
+  const entries = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid^="nav-"]')]
+      .map((el) => ({
+        id: el.getAttribute('data-testid'),
+        y: el.getBoundingClientRect().top,
+        rendered: el.getClientRects().length > 0
+      }))
+      .filter((entry) => entry.rendered)
+  );
+
+  check(`${label}: the rail renders at least one navigation entry`, entries.length > 0, String(entries.length));
+
+  const first = entries[0];
+  check(`${label}: the topmost navigation entry starts at or below 64px`,
+    first !== undefined && first.y >= HEADER_HEIGHT, JSON.stringify(first));
+
+  const intruders = entries.filter((entry) => entry.y < HEADER_HEIGHT);
+  check(`${label}: no navigation entry renders inside the header band`,
+    intruders.length === 0,
+    JSON.stringify(intruders.map((e) => `${e.id}@${Math.round(e.y)}`)));
+
+  // Independent of layout maths: confirm the header owns the pixels a reader
+  // would click in that band, rather than the rail bleeding through.
+  const topOfBand = await page.evaluate(() => {
+    const header = document.querySelector('header');
+    const element = document.elementFromPoint(header.getBoundingClientRect().width / 2, 20);
+    return element === null ? 'null' : (element.closest('header') !== null ? 'header' : 'other');
+  });
+  check(`${label}: the header owns the 20px band rather than the rail bleeding through`,
+    topOfBand === 'header', topOfBand);
+}
+
 const noHorizontalScroll = (page) =>
   page.evaluate(
     () => document.documentElement.scrollWidth <= window.innerWidth + 1
@@ -297,6 +360,7 @@ const noHorizontalScroll = (page) =>
   check('the main column clears the rail', Math.abs(geometry.mainLeft - geometry.railRight) < 2,
     JSON.stringify(geometry));
   check('page does not scroll horizontally', await noHorizontalScroll(page));
+  await assertSidebarClearsHeader(page, '1024px');
   check('no page errors', pageErrors.length === 0, pageErrors.join('; '));
   await context.close();
 }
@@ -344,6 +408,38 @@ const noHorizontalScroll = (page) =>
   });
   check('the target heading is scrolled into view below the header',
     headingTop !== null && headingTop >= 0 && headingTop < 200, String(headingTop));
+  await assertSidebarClearsHeader(page, '1440px');
+
+  const tocBox = await page.locator('[data-testid="toc-rail"]').boundingBox();
+  check('1440px: the table of contents rail starts below the header',
+    tocBox !== null && tocBox.y >= HEADER_HEIGHT - 1, JSON.stringify(tocBox));
+  check('no page errors', pageErrors.length === 0, pageErrors.join('; '));
+  await context.close();
+}
+
+// ------------------------------------------------------------------ 1280px
+{
+  section('[1280px] the xl breakpoint boundary');
+  const { context, page, pageErrors } = await openApp(1280, 900);
+
+  check('the left rail is visible at exactly 1280px', await page.locator('[data-testid="sidebar-rail"]').isVisible());
+  check('the right rail switches on at exactly 1280px', await page.locator('[data-testid="toc-rail"]').isVisible());
+  check('page does not scroll horizontally', await noHorizontalScroll(page));
+  await assertSidebarClearsHeader(page, '1280px');
+
+  const geometry = await page.evaluate(() => {
+    const main = document.getElementById('main-content');
+    const rail = document.querySelector('[data-testid="sidebar-rail"]');
+    const toc = document.querySelector('[data-testid="toc-rail"]');
+    return {
+      mainLeft: main.getBoundingClientRect().left,
+      railRight: rail.getBoundingClientRect().right,
+      mainRight: main.getBoundingClientRect().right,
+      tocLeft: toc.getBoundingClientRect().left
+    };
+  });
+  check('the main column is inset past the left rail', Math.abs(geometry.mainLeft - geometry.railRight) < 2, JSON.stringify(geometry));
+  check('the main column is inset before the right rail', Math.abs(geometry.tocLeft - geometry.mainRight) < 2, JSON.stringify(geometry));
   check('no page errors', pageErrors.length === 0, pageErrors.join('; '));
   await context.close();
 }

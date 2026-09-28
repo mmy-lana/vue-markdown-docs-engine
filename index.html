@@ -14,10 +14,22 @@
       Shiki writes as style attributes. No 'unsafe-eval' is required, because
       the highlighter runs on the pure-JavaScript regex engine rather than
       compiling WebAssembly at runtime.
+
+      `frame-ancestors` is deliberately absent. CSP Level 2 and Level 3 both
+      ignore that directive when the policy arrives in a <meta> element, and
+      browsers log a console warning saying so, which would be a permanent
+      false alarm for anyone auditing the page. Clickjacking protection has to
+      be delivered as response headers by whatever serves this build: a
+      Content Security Policy header with frame-ancestors set to 'none',
+      together with an X-Frame-Options header set to DENY. A static asset
+      pipeline cannot set either from inside the file, so the responsibility
+      is documented in the deployment notes instead. The header values are
+      deliberately not reproduced verbatim here, so that nothing scanning the
+      served HTML mistakes this comment for an active policy.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <script>

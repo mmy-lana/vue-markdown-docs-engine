@@ -124,26 +124,40 @@ onUnmounted(() => {
     <Teleport to="body">
       <div
         v-if="isNavOpen"
-        class="fixed inset-0 z-30 lg:hidden"
+        class="fixed inset-0 z-30 bg-slate-900/60 backdrop-blur-xs lg:hidden"
         aria-hidden="true"
+        data-testid="nav-scrim"
         @click="isNavOpen = false"
       />
     </Teleport>
 
+    <!--
+      One rail, two presentations.
+
+      Below `lg` this is an overlay drawer that starts at the top of the
+      viewport and supplies its own 64px header. From `lg` it becomes a fixed
+      column that starts *below* the sticky header via `lg:top-16`, so the
+      first navigation entry can never render underneath it. `lg:top-16` wins
+      over the `inset-y-0` shorthand because responsive variants are emitted
+      after unprefixed utilities.
+    -->
     <aside
       id="docs-navigation"
-      class="fixed inset-y-0 left-0 z-40 w-64 border-r border-slate-200 bg-white transition-transform duration-200 ease-out xl:w-72 lg:z-20 lg:translate-x-0 dark:border-slate-800 dark:bg-slate-950"
+      class="fixed inset-y-0 left-0 z-40 w-64 border-r border-slate-200 bg-white transition-transform duration-200 ease-out lg:top-16 lg:z-20 lg:h-[calc(100dvh-4rem)] lg:translate-x-0 xl:w-72 dark:border-slate-800 dark:bg-slate-950"
       :class="isNavOpen ? 'translate-x-0' : '-translate-x-full'"
       data-testid="sidebar-rail"
     >
       <!--
-        The drawer is a full-height surface that reaches the bottom of the
-        viewport, so it reserves the home-indicator inset on devices that
-        report one. Without it the last navigation entry sits under the
-        indicator and cannot be tapped.
+        No top padding here. The offset is supplied by whichever presentation
+        is active: the drawer's own header below `lg`, and the rail's
+        `lg:top-16` above it. Padding both would double the gap and, before
+        this was corrected, the desktop case lost it entirely.
+
+        The bottom inset keeps the last navigation entry clear of the iOS
+        home indicator on devices that report one.
       -->
       <div
-        class="h-dvh pt-16 pb-[env(safe-area-inset-bottom,0px)] lg:h-[calc(100dvh-4rem)] lg:pt-0 lg:pb-0"
+        class="h-dvh flex flex-col pb-[env(safe-area-inset-bottom,0px)] lg:h-full lg:pb-0"
       >
         <DocSidebar @close="isNavOpen = false" />
       </div>
@@ -158,9 +172,12 @@ onUnmounted(() => {
       </div>
     </main>
 
-    <!-- Fixed table of contents rail, xl and up. -->
+    <!--
+      Fixed table of contents rail, xl and up. Same geometry as the left rail:
+      pinned below the header, filling the remainder of the viewport.
+    -->
     <aside
-      class="fixed inset-y-0 right-0 z-20 hidden w-72 border-l border-slate-200 pt-16 xl:block dark:border-slate-800"
+      class="fixed top-16 right-0 bottom-0 z-20 hidden w-72 border-l border-slate-200 xl:block dark:border-slate-800"
       data-testid="toc-rail"
     >
       <div class="h-[calc(100dvh-4rem)] overflow-y-auto px-5 py-8">

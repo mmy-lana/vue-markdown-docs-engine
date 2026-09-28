@@ -352,6 +352,17 @@ function loadAndReconcile(): void {
   }
 
   let nextState: EngineState;
+  /**
+   * How many tombstones compaction removed during this load.
+   *
+   * The persistence decision below compares the next state against what is in
+   * memory, which is not the same question as whether what is on disk is
+   * current. If an earlier write failed after the in-memory map had already
+   * been compacted, the two agree while the disk still carries expired
+   * entries. Recording the pruning explicitly makes the write unconditional
+   * whenever compaction did work, so the disk is never left stale.
+   */
+  let prunedTombstoneCount = 0;
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
@@ -374,10 +385,10 @@ function loadAndReconcile(): void {
         throw new Error('The stored payload has no document list.');
       }
 
-      const deletions = evictExpiredTombstones(
-        toValidDeletionMap(payload.deletedAtMap),
-        Date.now()
-      );
+      const storedDeletions = toValidDeletionMap(payload.deletedAtMap);
+      const deletions = evictExpiredTombstones(storedDeletions, Date.now());
+      prunedTombstoneCount =
+        Object.keys(storedDeletions).length - Object.keys(deletions).length;
       const storedDocs = payload.docs.filter(isValidDocShape);
 
       const loadedDrafts: Record<string, DocDraft> = {};
@@ -415,7 +426,7 @@ function loadAndReconcile(): void {
   deletedAtMap.value = nextState.deletedAtMap;
   recentSearches.value = nextState.recentSearches;
 
-  if (!signaturesMatch(previousState, nextState)) {
+  if (prunedTombstoneCount > 0 || !signaturesMatch(previousState, nextState)) {
     const result = writeToLocalStorage(nextState);
     if (!result.ok) {
       console.warn(
