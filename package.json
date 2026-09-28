@@ -1,0 +1,29 @@
+{
+  "name": "vue-markdown-docs-engine",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "latest",
+    "vue-router": "latest",
+    "markdown-it": "latest",
+    "markdown-it-anchor": "latest",
+    "shiki": "latest",
+    "dompurify": "latest",
+    "yaml": "latest"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "latest",
+    "@tailwindcss/vite": "latest",
+    "@vitejs/plugin-vue": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest",
+    "vite": "latest",
+    "vue-tsc": "latest"
+  }
+}
