@@ -4,7 +4,7 @@ import BaseModal from '@/components/ui/BaseModal.vue';
 import BaseTextarea from '@/components/ui/BaseTextarea.vue';
 import BaseButton from '@/components/ui/BaseButton.vue';
 import BaseBadge from '@/components/ui/BaseBadge.vue';
-import { useDocStorage } from '@/composables/useDocStorage';
+import { useDocStorage, MAX_DOCUMENT_LENGTH } from '@/composables/useDocStorage';
 import { useMarkdownParser } from '@/composables/useMarkdownParser';
 import { extractFrontmatterSync, extractHeadingsSync } from '@/composables/useMarkdownParser';
 import type { CompiledDoc, DocItem } from '@/types';
@@ -125,6 +125,15 @@ async function refreshPreview(): Promise<void> {
   if (raw.trim().length === 0) {
     preview.value = null;
     previewError.value = null;
+    return;
+  }
+
+  // The preview runs the full compiler over the buffer on every pause. A
+  // document that could never be saved must not be compiled either, or the
+  // composer stalls on exactly the input the author is trying to remove.
+  if (raw.length > MAX_DOCUMENT_LENGTH) {
+    preview.value = null;
+    previewError.value = `Preview is disabled: the document exceeds the ${MAX_DOCUMENT_LENGTH / 1024} KB limit and cannot be saved.`;
     return;
   }
 
@@ -255,6 +264,36 @@ function onDelete(): void {
         </h2>
         <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           YAML frontmatter first, then markdown. The preview is exactly what readers will see.
+        </p>
+
+        <!--
+          Storage is browser-local and has no server-side copy. A reader who
+          clears site data loses unpublished work permanently, so that
+          consequence is stated in the composer rather than discovered later.
+        -->
+        <p
+          class="mt-3 flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"
+          data-testid="storage-disclaimer"
+        >
+          <svg
+            aria-hidden="true"
+            class="mt-0.5 size-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+            />
+          </svg>
+          <span>
+            <strong class="font-semibold">Local storage active.</strong> Documents are stored
+            exclusively in this browser profile. Clearing browser data permanently removes
+            unsaved modifications.
+          </span>
         </p>
       </div>
 

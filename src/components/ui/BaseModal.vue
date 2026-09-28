@@ -230,7 +230,8 @@ onUnmounted(() => {
         :aria-label="labelledBy ? undefined : ariaLabel"
         :aria-labelledby="labelledBy"
         tabindex="-1"
-        class="relative z-10 flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white shadow-2xl outline-none sm:max-h-[85dvh] sm:rounded-xl dark:border-slate-800 dark:bg-slate-900"
+        class="relative z-10 flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-xl border border-slate-200 bg-white shadow-2xl outline-none pb-[env(safe-area-inset-bottom,0px)] sm:max-h-[85dvh] sm:rounded-xl dark:border-slate-800 dark:bg-slate-900"
+        :style="{ maxHeight: 'calc(92dvh - env(safe-area-inset-bottom, 0px))' }"
       >
         <button
           v-if="!hideCloseButton"

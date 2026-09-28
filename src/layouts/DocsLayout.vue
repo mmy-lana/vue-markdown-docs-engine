@@ -136,7 +136,15 @@ onUnmounted(() => {
       :class="isNavOpen ? 'translate-x-0' : '-translate-x-full'"
       data-testid="sidebar-rail"
     >
-      <div class="h-dvh pt-16 lg:h-[calc(100dvh-4rem)] lg:pt-0">
+      <!--
+        The drawer is a full-height surface that reaches the bottom of the
+        viewport, so it reserves the home-indicator inset on devices that
+        report one. Without it the last navigation entry sits under the
+        indicator and cannot be tapped.
+      -->
+      <div
+        class="h-dvh pt-16 pb-[env(safe-area-inset-bottom,0px)] lg:h-[calc(100dvh-4rem)] lg:pt-0 lg:pb-0"
+      >
         <DocSidebar @close="isNavOpen = false" />
       </div>
     </aside>

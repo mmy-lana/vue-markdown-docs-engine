@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { readOversizedClipboard } from '@/composables/codeClipboardRegistry';
 
@@ -13,7 +13,7 @@ import { readOversizedClipboard } from '@/composables/codeClipboardRegistry';
  * here rather than by the document view, which keeps the view presentational
  * and confines all DOM mutation of injected markup to one place.
  */
-defineProps<{
+const props = defineProps<{
   /** Sanitized HTML produced by the compiler. */
   html: string;
 }>();
@@ -88,6 +88,52 @@ const pendingLabels = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>();
 
 /** Message announced to assistive technology after a clipboard attempt. */
 const clipboardStatus = ref<string>('');
+
+/** Root element holding the compiled HTML, used to harden links in place. */
+const contentRoot = ref<HTMLElement | null>(null);
+
+/**
+ * Applies the link policy to every anchor as soon as the markup is rendered.
+ *
+ * Doing this on click alone is not sufficient. `rel="noopener"` only
+ * suppresses `window.opener` if it is present when the tab is opened, and a
+ * middle click, a long press, or the browser context menu all open a tab
+ * without dispatching a click the page can intercept. The attributes have to
+ * be in the markup before any interaction.
+ */
+function hardenLinks(): void {
+  const root = contentRoot.value;
+  if (root === null) return;
+
+  const origin = window.location.origin;
+
+  for (const anchor of root.querySelectorAll<HTMLAnchorElement>('a[href]')) {
+    const href = anchor.getAttribute('href');
+    if (href === null) continue;
+
+    switch (classifyLink(href, origin)) {
+      case 'open-external':
+        anchor.setAttribute('target', '_blank');
+        anchor.setAttribute('rel', 'noopener noreferrer');
+        break;
+      case 'block':
+        anchor.removeAttribute('href');
+        anchor.setAttribute('aria-disabled', 'true');
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+watch(
+  () => props.html,
+  async () => {
+    await nextTick();
+    hardenLinks();
+  },
+  { immediate: true, flush: 'post' }
+);
 
 /**
  * Reads the snippet a copy button refers to.
@@ -227,10 +273,22 @@ function handleContentClick(event: MouseEvent): void {
 </script>
 
 <template>
-  <div
-    class="prose prose-slate max-w-none dark:prose-invert"
-    data-testid="doc-content"
-    v-html="html"
-    @click="handleContentClick"
-  />
+  <div>
+    <!--
+      Clipboard outcomes are announced here. The copy button's own label
+      change is invisible to a screen reader, so without this region a
+      successful copy is silent.
+    -->
+    <div class="sr-only" role="status" aria-live="polite" data-testid="clipboard-status">
+      {{ clipboardStatus }}
+    </div>
+
+    <div
+      ref="contentRoot"
+      class="prose prose-slate max-w-none dark:prose-invert"
+      data-testid="doc-content"
+      v-html="html"
+      @click="handleContentClick"
+    />
+  </div>
 </template>

@@ -211,14 +211,14 @@ const PROJECT_STRUCTURE = dedent(`
   ## Data flow
 
   \`\`\`text
-  useDocStorage  ──▶  docs: DocItem[]
-        │                  │
-        │                  ├──▶ useDocNavigation ──▶ sidebar, pager
-        │                  ├──▶ useDocSearch     ──▶ search palette
-        │                  └──▶ useMarkdownParser ─▶ CompiledDoc
-        │                                              │
-        └──▶ localStorage                               ▼
-                                                  DocView
+  useDocStorage ------> docs: DocItem[]
+        |                     |
+        |                     +--> useDocNavigation --> sidebar, pager
+        |                     +--> useDocSearch     --> search palette
+        |                     +--> useMarkdownParser --> CompiledDoc
+        |                                              |
+        +--> localStorage                             v
+                                                   DocView
   \`\`\`
 
   ## Build output

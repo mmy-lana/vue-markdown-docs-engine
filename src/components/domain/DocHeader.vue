@@ -91,13 +91,47 @@ const { isDark, toggleTheme } = useTheme();
 
       <button
         type="button"
-        class="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-base text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-slate-300 dark:hover:bg-slate-800"
+        class="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-slate-300 dark:hover:bg-slate-800"
         :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
         :aria-pressed="isDark"
         data-testid="theme-toggle"
         @click="toggleTheme"
       >
-        <span aria-hidden="true">{{ isDark ? '☀️' : '🌙' }}</span>
+        <!--
+          Inset outline icons rather than pictographic characters. The glyphs
+          are decorative, so the accessible name lives on the button; the
+          stroke inherits currentColor and therefore follows the theme.
+        -->
+        <svg
+          v-if="isDark"
+          aria-hidden="true"
+          class="size-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <circle cx="12" cy="12" r="4" />
+          <path
+            stroke-linecap="round"
+            d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41m11.32-11.32l1.41-1.41"
+          />
+        </svg>
+        <svg
+          v-else
+          aria-hidden="true"
+          class="size-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
+          />
+        </svg>
       </button>
     </div>
   </header>

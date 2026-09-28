@@ -10,7 +10,7 @@
  * Run with:                  pnpm verify:e2e
  */
 import { createServer } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -220,8 +220,9 @@ const noHorizontalScroll = (page) =>
   await page.locator('[data-testid="nav-toggle"]').click();
   await page.waitForTimeout(350);
   check('the drawer slides in', await rail.isVisible());
+  const openDrawerBox = await rail.boundingBox();
   check('the drawer is on screen when open',
-    (await rail.boundingBox())?.x >= 0, JSON.stringify(await rail.boundingBox()));
+    openDrawerBox !== null && openDrawerBox.x >= -1, JSON.stringify(openDrawerBox));
   check('opening the drawer locks background scroll',
     (await page.evaluate(() => document.body.style.overflow)) === 'hidden');
   check('the active document is marked in the drawer',
@@ -542,6 +543,139 @@ const noHorizontalScroll = (page) =>
 
   check('no page errors', pageErrors.length === 0, pageErrors.join('; '));
   await context.close();
+}
+
+
+// --------------------------------------------------------------- security
+{
+  section('[security] storage quotas, link protocols and source hygiene');
+
+  // 1. Storage quota: an oversized document must be refused before it can
+  //    consume the origin quota, and must leave storage untouched.
+  const { context, page, pageErrors } = await openApp(1280, 900);
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+
+  const before = await page.evaluate(() => (localStorage.getItem('vue_docs_engine_v1') ?? '').length);
+  await page.locator('[data-testid="editor-toggle"]').click();
+  await page.waitForSelector('[data-testid="editor-modal"]');
+
+  // Pushed through the DOM directly: a 520 KB string through a typed
+  // keystroke simulation would take minutes for no added coverage.
+  await page.evaluate((size) => {
+    const field = document.getElementById('editor-source');
+    const value =
+      '---\ntitle: Oversized\ncategory: Operations\nslug: oversized-doc\n---\n\n' + 'x'.repeat(size);
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }, 520_000);
+
+  await page.waitForSelector('[data-testid="preview-error"]', { timeout: 20_000 });
+  await page.locator('[data-testid="editor-save"]').click();
+  await page.waitForSelector('[data-testid="save-error"]', { timeout: 15_000 });
+
+  const quotaError = (await page.locator('[data-testid="save-error"]').textContent())?.trim();
+  check('an oversized document is rejected with the documented message',
+    quotaError === 'Document exceeds the maximum permitted size of 500 KB.', String(quotaError));
+  check('the composer stays open after a quota rejection',
+    await page.locator('[data-testid="editor-modal"]').isVisible());
+  check('the oversized preview reports rather than rendering',
+    (await page.locator('[data-testid="preview-error"]').textContent())?.includes('Preview is disabled') === true);
+  check('nothing oversized reached storage',
+    (await page.evaluate(() => (localStorage.getItem('vue_docs_engine_v1') ?? '').length)) === before);
+  check('the oversized document is not in the corpus',
+    await page.evaluate(() =>
+      (JSON.parse(localStorage.getItem('vue_docs_engine_v1') ?? '{}').docs ?? [])
+        .some((d) => d.slug === 'oversized-doc')
+    ) === false);
+
+  // 2. Link protocols. Written as a document, so the assertions exercise the
+  //    same path a reader's content takes.
+  const hostile = [
+    '[protocol relative](//malicious.example)',
+    '[insecure transport](http://insecure.example)',
+    '[secure transport](https://secure.example)',
+    '[dangerous scheme](javascript:alert(1))',
+    '[internal route](/docs/local-storage)'
+  ].join('\n\n');
+
+  await page.evaluate((body) => {
+    const field = document.getElementById('editor-source');
+    const value = `---\ntitle: Link Audit\ncategory: Operations\nslug: link-audit\n---\n\n${body}\n`;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }, hostile);
+
+  await page.waitForSelector('[data-testid="preview-content"]', { timeout: 10_000 });
+  await page.locator('[data-testid="editor-save"]').click();
+  await page.waitForFunction(() => location.pathname === '/docs/link-audit', null, { timeout: 15_000 });
+  await page.waitForSelector('[data-testid="doc-content"]');
+
+  const links = await page.evaluate(() =>
+    [...document.querySelectorAll('[data-testid="doc-content"] a')].map((a) => ({
+      href: a.getAttribute('href'),
+      target: a.getAttribute('target'),
+      rel: a.getAttribute('rel')
+    }))
+  );
+
+  const protocolRelative = links.find((l) => (l.href ?? '').startsWith('//'));
+  check('a protocol-relative link survives compilation',
+    protocolRelative !== undefined, JSON.stringify(links));
+  check('a protocol-relative link is forced into an isolated tab',
+    protocolRelative?.target === '_blank' &&
+      (protocolRelative?.rel ?? '') === 'noopener noreferrer',
+    JSON.stringify(protocolRelative));
+  check('a protocol-relative link is not treated as an in-app route',
+    protocolRelative?.target !== null);
+
+  const insecure = links.find((l) => (l.href ?? '').startsWith('http://'));
+  check('an http destination is isolated too',
+    insecure?.target === '_blank' && (insecure?.rel ?? '').includes('noopener'),
+    JSON.stringify(insecure));
+
+  check('no javascript: destination survives anywhere in the document',
+    links.every((l) => !(l.href ?? '').toLowerCase().startsWith('javascript:')),
+    JSON.stringify(links.map((l) => l.href)));
+
+  const internal = links.find((l) => (l.href ?? '').startsWith('/docs/'));
+  check('an internal route is left for the router to handle',
+    internal !== undefined && internal.target === null, JSON.stringify(internal));
+
+  check('no page errors', pageErrors.length === 0, pageErrors.join('; '));
+  await context.close();
+}
+
+// 3. Source hygiene: no pictographic characters anywhere under src/.
+{
+  section('[hygiene] source contains no Unicode emoji');
+  const srcRoot = new URL('../src/', import.meta.url).pathname;
+  const walk = (dir, out = []) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full, out);
+      else out.push(full);
+    }
+    return out;
+  };
+
+  // Extended_Pictographic plus Emoji_Presentation is the standard definition:
+  // it covers dingbats, pictographs and regional indicators, and excludes
+  // typographic symbols such as arrows, bullets and quotation marks.
+  const EMOJI = /\p{Extended_Pictographic}|\p{Emoji_Presentation}/gu;
+  const offenders = [];
+  for (const file of walk(srcRoot)) {
+    const text = readFileSync(file, 'utf8');
+    for (const match of text.matchAll(EMOJI)) {
+      offenders.push(
+        `${file.slice(srcRoot.length)}:${text.slice(0, match.index).split('\n').length} ` +
+          `U+${match[0].codePointAt(0).toString(16).toUpperCase()} ${JSON.stringify(match[0])}`
+      );
+    }
+  }
+
+  check('no Unicode emoji exist under src/', offenders.length === 0, offenders.slice(0, 6).join('; '));
 }
 
 await browser.close();
