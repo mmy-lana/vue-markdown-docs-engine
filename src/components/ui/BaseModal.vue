@@ -90,18 +90,27 @@ import { nextTick, onUnmounted, ref, watch } from 'vue';
 /** Identifies this instance within the module-scoped dialog stack. */
 const dialogToken = Symbol('base-modal');
 
+/**
+ * A dialog must always expose an accessible name.
+ *
+ * The union makes that a compile-time guarantee: `ariaLabel` is required
+ * unless the caller points `labelledBy` at a visible heading, which is the
+ * preferable form because the name is then already on screen.
+ */
+type ModalNameProps = { labelledBy: string; ariaLabel?: string } | { labelledBy?: string; ariaLabel: string };
+
 const props = withDefaults(
   defineProps<{
     /** Whether the dialog is mounted and interactive. */
     isOpen: boolean;
     /** Accessible name, used unless `labelledBy` is supplied. */
-    ariaLabel: string;
+    ariaLabel?: string;
     /** Id of the visible heading, preferred over `ariaLabel` when present. */
     labelledBy?: string;
     /** Hides the close affordance in the top-right corner. */
     hideCloseButton?: boolean;
-  }>(),
-  { labelledBy: undefined, hideCloseButton: false }
+  } & ModalNameProps>(),
+  { labelledBy: undefined, ariaLabel: undefined, hideCloseButton: false }
 );
 
 const emit = defineEmits<{
@@ -177,6 +186,14 @@ function handleKeydown(event: KeyboardEvent): void {
 
 function requestClose(): void {
   emit('close');
+}
+
+// The prop union already forbids this at compile time; the guard covers the
+// case where a dialog is driven from untyped markup or a dynamic binding.
+if (import.meta.env.DEV && props.ariaLabel === undefined && props.labelledBy === undefined) {
+  console.warn(
+    '[BaseModal] A dialog was opened without "aria-label" or "aria-labelledby"; it has no accessible name.'
+  );
 }
 
 watch(

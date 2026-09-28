@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 /**
  * A labelled single-line text field.
@@ -8,7 +8,12 @@ import { computed } from 'vue';
  * the viewport when the field receives focus. The error state is wired through
  * `aria-invalid` and `aria-describedby`, and the message is announced with
  * `role="alert"` so a validation failure is not silent.
+ *
+ * Fallthrough attributes are forwarded to the real `<input>` rather than the
+ * label wrapper, so `role`, `aria-controls`, `data-*` and test hooks land on
+ * the focusable element where they belong.
  */
+defineOptions({ inheritAttrs: false });
 
 const model = defineModel<string>({ default: '' });
 
@@ -58,6 +63,8 @@ const emit = defineEmits<{
   (event: 'enter', keyboardEvent: KeyboardEvent): void;
 }>();
 
+const inputElement = ref<HTMLInputElement | null>(null);
+
 const hasError = computed<boolean>(() => props.error !== undefined && props.error.length > 0);
 
 const describedBy = computed<string | undefined>(() => {
@@ -65,6 +72,19 @@ const describedBy = computed<string | undefined>(() => {
   if (props.hint !== undefined && props.hint.length > 0) return `${props.id}-hint`;
   return undefined;
 });
+
+/**
+ * Moves focus to the underlying control.
+ *
+ * Callers that own their own focus strategy (the search palette, for example)
+ * cannot reach the real `<input>` through a template ref on this component,
+ * because the component's root element is the label wrapper.
+ */
+function focus(): void {
+  inputElement.value?.focus();
+}
+
+defineExpose({ focus, element: inputElement });
 </script>
 
 <template>
@@ -96,6 +116,8 @@ const describedBy = computed<string | undefined>(() => {
       </svg>
 
       <input
+        ref="inputElement"
+        v-bind="$attrs"
         :id="id"
         v-model="model"
         :type="type"
