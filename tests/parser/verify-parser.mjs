@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { chromium } from 'playwright';
+import { launchHeadlessBrowser } from '../../scripts/launch-browser.mjs';
 
 /**
  * Browser verification for the markdown compiler.
@@ -34,7 +35,7 @@ const ENTRY = process.argv[2] ?? '/tests/parser/index.html';
 const fails = []; let n = 0;
 const check = (l, ok, d) => { n++; if (ok) console.log('  ok   ' + l); else { fails.push(l); console.log(`  FAIL ${l}${d ? ' — ' + d : ''}`); } };
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await launchHeadlessBrowser();
 const page = await browser.newPage();
 const errs = []; page.on('pageerror', e => errs.push(e.message));
 await page.goto(`http://127.0.0.1:${port}${ENTRY}`);

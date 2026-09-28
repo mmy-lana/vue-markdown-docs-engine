@@ -10,6 +10,36 @@ const STORAGE_KEY = 'vue_docs_engine_v1';
 /** Key that receives a copy of a payload that failed to load. */
 const STORAGE_BACKUP_KEY = `${STORAGE_KEY}_backup`;
 
+/**
+ * Largest single document the engine will accept, in UTF-16 code units.
+ *
+ * Without a ceiling, one save can push the serialised payload past the
+ * browser's origin quota, after which every subsequent write fails and the
+ * corpus becomes read-only. Rejecting early keeps a single oversized paste
+ * from bricking storage for the visitor.
+ */
+export const MAX_DOCUMENT_LENGTH = 512_000;
+
+/**
+ * Combined ceiling for every document and draft, in UTF-16 code units.
+ *
+ * Enforced before serialisation so the cost of building a multi-megabyte
+ * JSON string is never paid for a write that cannot succeed.
+ */
+export const MAX_CORPUS_LENGTH = 4_096_000;
+
+/** How long a deletion tombstone is honoured before it is compacted away. */
+export const TOMBSTONE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Ids carrying this prefix belong to the bundled corpus.
+ *
+ * Their tombstones are kept permanently: compaction exists to reclaim space
+ * in the visitor's own deletion history, and expiring a seed tombstone would
+ * let reconciliation resurrect a document the visitor deliberately removed.
+ */
+const SEED_ID_PREFIX = 'seed-';
+
 /** Outcome of a single save attempt. */
 export type SaveDocResult =
   | { success: true; doc: DocItem }
@@ -147,6 +177,49 @@ function toValidRecentSearches(value: unknown): string[] {
   return value
     .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
     .slice(0, MAX_RECENT_SEARCHES);
+}
+
+/**
+ * Measures the corpus a write would produce.
+ *
+ * Only the document bodies are counted. They dominate the payload by orders
+ * of magnitude, and measuring them keeps the check O(n) in document count
+ * rather than in serialised bytes.
+ */
+function measureCorpusLength(
+  docs: readonly DocItem[],
+  draftMap: Record<string, DocDraft>
+): number {
+  let total = 0;
+  for (const doc of docs) {
+    total += doc.rawContent.length;
+  }
+  for (const draft of Object.values(draftMap)) {
+    total += draft.rawContent.length;
+  }
+  return total;
+}
+
+/**
+ * Drops tombstones that have outlived their retention window.
+ *
+ * A tombstone is only needed to stop reconciliation resurrecting a seed, so
+ * once the window has passed the entry is pure growth in the payload. Seed
+ * tombstones are exempt and retained forever, because expiring one would
+ * undo a deliberate deletion.
+ */
+function evictExpiredTombstones(
+  tombstones: Record<string, number>,
+  now: number
+): Record<string, number> {
+  const retained: Record<string, number> = {};
+  for (const [id, deletedAt] of Object.entries(tombstones)) {
+    const isSeed = id.startsWith(SEED_ID_PREFIX);
+    if (isSeed || now - deletedAt <= TOMBSTONE_TTL_MS) {
+      retained[id] = deletedAt;
+    }
+  }
+  return retained;
 }
 
 /** Produces the state used when storage holds nothing usable. */
@@ -301,7 +374,10 @@ function loadAndReconcile(): void {
         throw new Error('The stored payload has no document list.');
       }
 
-      const deletions = toValidDeletionMap(payload.deletedAtMap);
+      const deletions = evictExpiredTombstones(
+        toValidDeletionMap(payload.deletedAtMap),
+        Date.now()
+      );
       const storedDocs = payload.docs.filter(isValidDocShape);
 
       const loadedDrafts: Record<string, DocDraft> = {};
@@ -398,6 +474,15 @@ export function useDocStorage() {
    * @param existingId  The document to replace, or `undefined` to create one.
    */
   function saveDoc(rawMarkdown: string, existingId?: string): SaveDocResult {
+    // Size is checked first, before the frontmatter is parsed, so a 40 MB
+    // paste is rejected on a string length rather than after a full parse.
+    if (rawMarkdown.length > MAX_DOCUMENT_LENGTH) {
+      return {
+        success: false,
+        error: 'Document exceeds the maximum permitted size of 500 KB.'
+      };
+    }
+
     const targetId = existingId ?? generateId();
 
     let frontmatter: ReturnType<typeof extractFrontmatterSync>['frontmatter'];
@@ -465,6 +550,13 @@ export function useDocStorage() {
     const nextDeletions = { ...deletedAtMap.value };
     delete nextDeletions[targetId];
 
+    if (measureCorpusLength(nextDocs, nextDrafts) > MAX_CORPUS_LENGTH) {
+      return {
+        success: false,
+        error: 'Total documentation storage exceeds the 4 MB budget. Please delete unused documents.'
+      };
+    }
+
     const write = writeToLocalStorage({
       docs: nextDocs,
       drafts: nextDrafts,
@@ -515,10 +607,24 @@ export function useDocStorage() {
 
   /** Autosaves an unpublished work-in-progress. */
   function saveDraft(draft: DocDraft): boolean {
+    if (draft.rawContent.length > MAX_DOCUMENT_LENGTH) {
+      console.error(
+        `[vue-docs-engine] Draft rejected: exceeds ${MAX_DOCUMENT_LENGTH} UTF-16 code units.`
+      );
+      return false;
+    }
+
     const nextDrafts: Record<string, DocDraft> = {
       ...drafts.value,
       [draft.id]: { ...draft, lastSavedAt: Date.now() }
     };
+
+    if (measureCorpusLength(docs.value, nextDrafts) > MAX_CORPUS_LENGTH) {
+      console.error(
+        `[vue-docs-engine] Draft rejected: corpus would exceed ${MAX_CORPUS_LENGTH} UTF-16 code units.`
+      );
+      return false;
+    }
 
     const write = writeToLocalStorage({
       docs: docs.value,

@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { chromium } from 'playwright';
+import { launchHeadlessBrowser } from '../../scripts/launch-browser.mjs';
 
 const ROOT = new URL('../.modal-dist/', import.meta.url).pathname;
 const MIME = {
@@ -48,7 +49,7 @@ function check(label, condition, detail) {
   }
 }
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await launchHeadlessBrowser();
 const page = await browser.newPage({ viewport: { width: 1024, height: 768 } });
 const pageErrors = [];
 page.on('pageerror', (error) => pageErrors.push(error.message));

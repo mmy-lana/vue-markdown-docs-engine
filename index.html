@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Documentation Wiki Engine</title>
+    <!--
+      Content Security Policy.
+
+      `default-src 'self'` is the backstop; `object-src 'none'` and
+      `base-uri 'self'` close plugin and base-tag hijacking outright.
+      Inline allowances are limited to what the build actually needs: the
+      pre-paint theme script, and the per-token colour custom properties
+      Shiki writes as style attributes. No 'unsafe-eval' is required, because
+      the highlighter runs on the pure-JavaScript regex engine rather than
+      compiling WebAssembly at runtime.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <script>
       (function () {
         try {

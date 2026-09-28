@@ -14,6 +14,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { launchHeadlessBrowser } from './launch-browser.mjs';
 
 const DIST = new URL('../dist/', import.meta.url).pathname;
 
@@ -70,7 +71,7 @@ function check(label, condition, detail) {
   }
 }
 
-const browser = await chromium.launch({ channel: 'chrome' });
+const browser = await launchHeadlessBrowser();
 
 /** A fresh context per scenario, so localStorage never leaks between them. */
 async function openApp(width, height = 900) {

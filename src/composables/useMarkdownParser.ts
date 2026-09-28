@@ -6,31 +6,18 @@ import MarkdownIt, {
   type Token
 } from 'markdown-it';
 import markdownItAnchor from 'markdown-it-anchor';
-import { createHighlighterCore, type HighlighterCore } from 'shiki/core';
-import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
-import bashLang from 'shiki/langs/bash.mjs';
-import cssLang from 'shiki/langs/css.mjs';
-import diffLang from 'shiki/langs/diff.mjs';
-import htmlLang from 'shiki/langs/html.mjs';
-import javascriptLang from 'shiki/langs/javascript.mjs';
-import jsonLang from 'shiki/langs/json.mjs';
-import markdownLang from 'shiki/langs/markdown.mjs';
-import sqlLang from 'shiki/langs/sql.mjs';
-import typescriptLang from 'shiki/langs/typescript.mjs';
-import vueLang from 'shiki/langs/vue.mjs';
-import yamlLang from 'shiki/langs/yaml.mjs';
-import githubDarkTheme from 'shiki/themes/github-dark.mjs';
-import githubLightTheme from 'shiki/themes/github-light.mjs';
+import type { HighlightEngine } from '@/composables/shiki';
+import { buildClipboardAttributes } from '@/composables/codeClipboardRegistry';
 import DOMPurify from 'dompurify';
 import YAML from 'yaml';
 import type { CompiledDoc, DocFrontmatter, DocHeading, DocItem } from '@/types';
 import { SLUG_REGEX, WORDS_PER_MINUTE, createSlugifier } from '@/types';
 
-/**
- * Frontmatter fence: `---\n<yaml>\n---\n<body>`. Both LF and CRLF line endings
- * are accepted; the closing fence must be followed by the document body.
- */
-const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+/** Opening and closing fence markers for a document's frontmatter block. */
+const FRONTMATTER_FENCE = '---';
+
+/** Longest run of fence markers tolerated in place of a single line. */
+const MAX_FENCE_RUN = 3;
 
 /** Heading levels that are surfaced in the table of contents and search index. */
 const TRACKED_HEADING_LEVELS = new Set<number>([2, 3, 4]);
@@ -38,28 +25,6 @@ const TRACKED_HEADING_LEVELS = new Set<number>([2, 3, 4]);
 /** Class applied to every rendered heading so it clears the sticky header. */
 const HEADING_CLASS = 'doc-heading';
 
-/**
- * Languages bundled with the engine. A fence naming anything else falls back
- * to plain text.
- *
- * Imported one module at a time rather than from the `shiki` barrel, which
- * would pull every bundled grammar and theme into the build output.
- */
-const HIGHLIGHT_LANGUAGES = [
-  javascriptLang,
-  typescriptLang,
-  vueLang,
-  jsonLang,
-  bashLang,
-  markdownLang,
-  htmlLang,
-  cssLang,
-  yamlLang,
-  diffLang,
-  sqlLang
-] as const;
-
-const HIGHLIGHT_THEMES = [githubLightTheme, githubDarkTheme] as const;
 
 /**
  * The single MarkdownIt configuration used by every parsing path.
@@ -112,6 +77,75 @@ export function extractInlineText(children: Token[] | null | undefined): string 
 }
 
 /**
+ * Splits a document into its YAML block and markdown body.
+ *
+ * Implemented with index arithmetic rather than a regular expression so the
+ * cost is provably linear in the length of the input. A lazy capture group
+ * followed by a line-anchored terminator makes the engine re-enter the
+ * pattern at every offset; that is linear in practice but its behaviour is
+ * left to the engine, whereas these steps are not. On a multi-megabyte or
+ * deliberately malformed document the difference is the difference between a
+ * predictable parse and an unpredictable one.
+ *
+ * Both LF and CRLF line endings are accepted.
+ */
+function splitFrontmatter(rawContent: string): { yamlBlock: string; body: string } {
+  // The opening fence must be the very first thing in the document.
+  if (!rawContent.startsWith(FRONTMATTER_FENCE)) {
+    throw new Error('Document is missing a YAML frontmatter boundary.');
+  }
+
+  let cursor = FRONTMATTER_FENCE.length;
+
+  // An all-fence first line is an empty block, not a document.
+  if (cursor < rawContent.length && rawContent[cursor] === FRONTMATTER_FENCE[0]) {
+    throw new Error('Document is missing a YAML frontmatter boundary.');
+  }
+
+  if (rawContent.startsWith('\r\n', cursor)) {
+    cursor += 2;
+  } else if (rawContent.startsWith('\n', cursor)) {
+    cursor += 1;
+  } else {
+    throw new Error('Document is missing a YAML frontmatter boundary.');
+  }
+
+  const yamlStart = cursor;
+  let yamlEnd = -1;
+  let bodyStart = -1;
+
+  while (cursor < rawContent.length) {
+    let lineEnd = rawContent.indexOf('\n', cursor);
+    const atEndOfInput = lineEnd === -1;
+    if (atEndOfInput) {
+      lineEnd = rawContent.length;
+    }
+
+    // Measure the line without its terminator, tolerating a trailing CR.
+    let contentEnd = lineEnd;
+    if (contentEnd > cursor && rawContent[contentEnd - 1] === '\r') {
+      contentEnd -= 1;
+    }
+
+    const line = rawContent.slice(cursor, contentEnd);
+
+    if (line === FRONTMATTER_FENCE || (line.length > 0 && line.length <= MAX_FENCE_RUN && /^-+$/.test(line))) {
+      yamlEnd = cursor;
+      bodyStart = atEndOfInput ? rawContent.length : lineEnd + 1;
+      break;
+    }
+
+    cursor = atEndOfInput ? rawContent.length : lineEnd + 1;
+  }
+
+  if (yamlEnd === -1 || bodyStart === -1) {
+    throw new Error('Document is missing a YAML frontmatter boundary.');
+  }
+
+  return { yamlBlock: rawContent.slice(yamlStart, yamlEnd), body: rawContent.slice(bodyStart) };
+}
+
+/**
  * Splits a document into its YAML frontmatter and markdown body, validating
  * every field the engine depends on.
  *
@@ -120,13 +154,7 @@ export function extractInlineText(children: Token[] | null | undefined): string 
  * direct display in the editor's error state.
  */
 export function extractFrontmatterSync(rawContent: string): ParsedMarkdown {
-  const match = FRONTMATTER_PATTERN.exec(rawContent);
-  const yamlBlock = match?.[1];
-  const body = match?.[2];
-
-  if (match === null || yamlBlock === undefined || body === undefined) {
-    throw new Error('Document is missing a YAML frontmatter boundary.');
-  }
+  const { yamlBlock, body } = splitFrontmatter(rawContent);
 
   let parsedYaml: unknown;
   try {
@@ -222,37 +250,49 @@ export function extractHeadingsSync(body: string): DocHeading[] {
  *
  * Caching the promise rather than the resolved value is what removes the
  * initialisation race: two documents compiled at the same moment await the
- * same bundle instead of each constructing their own WebAssembly instance.
+ * same engine instead of each constructing their own.
+ *
+ * The engine module is imported dynamically, so neither Shiki nor any grammar
+ * sits in the initial bundle.
  */
-let highlighterPromise: Promise<HighlighterCore | null> | null = null;
+let enginePromise: Promise<HighlightEngine | null> | null = null;
 
-/** Languages available to the current highlighter, as a fast lookup set. */
-let loadedLanguages = new Set<string>();
-
-function getHighlighter(): Promise<HighlighterCore | null> {
-  if (highlighterPromise === null) {
-    highlighterPromise = createHighlighterCore({
-      themes: [...HIGHLIGHT_THEMES],
-      langs: [...HIGHLIGHT_LANGUAGES],
-      // The pure-JavaScript regex engine avoids shipping the ~600 kB Oniguruma
-      // WebAssembly binary. For the syntax this engine highlights the
-      // difference is not perceptible, and the download is not.
-      engine: createJavaScriptRegexEngine()
-    })
-      .then((highlighter) => {
-        loadedLanguages = new Set(highlighter.getLoadedLanguages());
-        return highlighter;
-      })
+function getHighlightEngine(): Promise<HighlightEngine | null> {
+  if (enginePromise === null) {
+    enginePromise = import('@/composables/shiki')
+      .then((module) => module.createHighlightEngine())
       .catch((cause: unknown) => {
         // Highlighting is an enhancement, not a requirement. A blocked or
-        // failed grammar load degrades every fence to plain text instead of
-        // failing the whole document.
+        // failed load degrades every fence to plain text instead of failing
+        // the whole document.
         console.error('[vue-docs-engine] Syntax highlighting is unavailable:', cause);
         return null;
       });
   }
 
-  return highlighterPromise;
+  return enginePromise;
+}
+
+/**
+ * Collects the fence languages a document body will actually render.
+ *
+ * Grammars are fetched before the synchronous MarkdownIt render runs, because
+ * a renderer rule cannot await. Reading the body directly is exact enough:
+ * an info string on a closing fence is empty, so it contributes nothing.
+ */
+function collectFenceLanguages(body: string): Set<string> {
+  const languages = new Set<string>();
+  const fenceStart = /^ {0,3}(?:`{3,}|~{3,})\s*([^\s`~]*)/;
+
+  for (const line of body.split('\n')) {
+    const match = fenceStart.exec(line);
+    const language = match?.[1]?.toLowerCase() ?? '';
+    if (language.length > 0) {
+      languages.add(language);
+    }
+  }
+
+  return languages;
 }
 
 /** Escapes text for safe interpolation into an HTML text node. */
@@ -264,39 +304,35 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Renders a fence when no highlighter is available. */
-function renderPlainFence(language: string, code: string): string {
+/** The shared chrome around a fenced block. */
+function renderCodeCard(language: string, code: string, body: string): string {
   return `<div class="not-prose doc-code-card my-6 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
     <div class="flex h-11 items-center justify-between border-b border-slate-200 bg-slate-100 px-4 font-mono text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
       <span>${escapeHtml(language)}</span>
-      <button type="button" class="doc-code-copy-btn inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center font-sans text-xs font-medium text-slate-600 hover:text-brand-500 dark:text-slate-300" data-clipboard="${encodeURIComponent(code)}" aria-label="Copy code block">Copy</button>
+      <button type="button" class="doc-code-copy-btn inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center font-sans text-xs font-medium text-slate-600 hover:text-brand-500 dark:text-slate-300" ${buildClipboardAttributes(code)} aria-label="Copy code block">Copy</button>
     </div>
-    <div class="overflow-x-auto text-sm"><pre class="m-0 p-4 font-mono"><code>${escapeHtml(code)}</code></pre></div>
+    <div class="overflow-x-auto text-sm">${body}</div>
   </div>`;
+}
+
+/** Renders a fence as escaped plain text, with no highlighting applied. */
+function renderPlainFence(language: string, code: string): string {
+  const body = `<pre class="m-0 p-4 font-mono"><code>${escapeHtml(code)}</code></pre>`;
+  return renderCodeCard(language, code, body);
 }
 
 /** Renders a highlighted fence inside the engine's code card. */
 function renderHighlightedFence(
-  highlighter: HighlighterCore,
+  engine: HighlightEngine,
   language: string,
   code: string
 ): string {
-  // `defaultColor: false` emits both palettes as CSS custom properties, which
-  // `style.css` swaps on the `dark` class. No JavaScript re-render is needed
-  // when the visitor toggles the theme.
-  const highlighted = highlighter.codeToHtml(code, {
-    lang: language,
-    themes: { light: 'github-light', dark: 'github-dark' },
-    defaultColor: false
-  });
-
-  return `<div class="not-prose doc-code-card my-6 overflow-hidden rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900">
-    <div class="flex h-11 items-center justify-between border-b border-slate-200 bg-slate-100 px-4 font-mono text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-      <span>${escapeHtml(language)}</span>
-      <button type="button" class="doc-code-copy-btn inline-flex min-h-11 min-w-11 cursor-pointer items-center justify-center font-sans text-xs font-medium text-slate-600 hover:text-brand-500 dark:text-slate-300" data-clipboard="${encodeURIComponent(code)}" aria-label="Copy code block">Copy</button>
-    </div>
-    <div class="overflow-x-auto text-sm">${highlighted}</div>
-  </div>`;
+  const highlighted = engine.highlight(language, code);
+  if (highlighted === null) {
+    // The grammar is supported but unavailable; plain text is the contract.
+    return renderPlainFence(language, code);
+  }
+  return renderCodeCard(language, code, highlighted);
 }
 
 /**
@@ -306,7 +342,7 @@ function renderHighlightedFence(
  * counters and heading callback isolated from any concurrent compile.
  */
 function createDocumentParser(
-  highlighter: HighlighterCore | null,
+  engine: HighlightEngine | null,
   headings: DocHeading[]
 ): MarkdownItInstance {
   const md = new MarkdownIt(MARKDOWN_PARSER_OPTIONS);
@@ -318,16 +354,15 @@ function createDocumentParser(
     const token = tokens[index];
     if (token === undefined) return '';
 
-    const requested = token.info.trim().split(/\s+/)[0] ?? '';
+    const requested = (token.info.trim().split(/\s+/)[0] ?? '').toLowerCase();
     const language = requested.length > 0 ? requested : 'text';
     const code = token.content;
-    const isKnown = loadedLanguages.has(language);
 
-    if (highlighter === null || !isKnown) {
-      return renderPlainFence(isKnown ? language : (requested.length > 0 ? requested : 'text'), code);
+    if (engine === null || !engine.canHighlight(language)) {
+      return renderPlainFence(language, code);
     }
 
-    return renderHighlightedFence(highlighter, language, code);
+    return renderHighlightedFence(engine, language, code);
   };
 
   // Scroll-linked headings must clear the 64px sticky header, which the
@@ -385,19 +420,50 @@ export function useMarkdownParser() {
     try {
       const { body } = extractFrontmatterSync(doc.rawContent);
       const headings: DocHeading[] = [];
-      const highlighter = await getHighlighter();
-      const md = createDocumentParser(highlighter, headings);
+      const engine = await getHighlightEngine();
+      if (engine !== null) {
+        // Grammars are fetched up front because a renderer rule cannot await.
+        await engine.prepare(collectFenceLanguages(body));
+      }
+      const md = createDocumentParser(engine, headings);
 
       const rawHtml = md.render(body);
       const htmlContent = DOMPurify.sanitize(rawHtml, {
-        ADD_ATTR: ['data-clipboard', 'target', 'rel'],
+        ADD_ATTR: ['data-clipboard', 'data-clipboard-ref', 'target', 'rel'],
         ADD_TAGS: ['button'],
         // `style` is deliberately permitted: with `html: false` a document can
         // never author markup, so the only inline styles present are the dual
         // theme colour variables Shiki emits. Forbidding them would render
         // every code block colourless.
-        FORBID_TAGS: ['style', 'script', 'iframe', 'object', 'embed', 'form'],
-        FORBID_ATTR: ['srcset', 'formaction']
+        //
+        // The rest are removed outright. `svg` and `math` are on the list
+        // because each hosts a scripting namespace of its own, and `base` can
+        // repoint every relative URL the page resolves. `button` stays allowed
+        // because the code card's copy control is emitted by the compiler; the
+        // other form controls are not, and cannot appear regardless.
+        FORBID_TAGS: [
+          'style',
+          'script',
+          'noscript',
+          'template',
+          'iframe',
+          'frame',
+          'frameset',
+          'object',
+          'embed',
+          'applet',
+          'form',
+          'input',
+          'textarea',
+          'select',
+          'option',
+          'base',
+          'link',
+          'meta',
+          'svg',
+          'math'
+        ],
+        FORBID_ATTR: ['srcset', 'formaction', 'ping', 'http-equiv', 'content']
       });
 
       const words = body.trim().split(/\s+/).filter((word) => word.length > 0).length;

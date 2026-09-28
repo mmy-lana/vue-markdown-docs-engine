@@ -7,29 +7,29 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "vue-tsc --noEmit",
-    "verify:modal": "vite build --config tests/vite.modal.config.ts --logLevel warn && node tests/modal/verify-modal.mjs",
-    "verify:parser": "vite build --config tests/vite.parser.config.ts --logLevel warn && node tests/parser/verify-parser.mjs",
     "verify": "pnpm run build && pnpm run verify:modal && pnpm run verify:parser && pnpm run verify:e2e",
-    "verify:e2e": "node scripts/verify-e2e.mjs"
+    "verify:e2e": "node scripts/verify-e2e.mjs",
+    "verify:modal": "vite build --config tests/vite.modal.config.ts --logLevel warn && node tests/modal/verify-modal.mjs",
+    "verify:parser": "vite build --config tests/vite.parser.config.ts --logLevel warn && node tests/parser/verify-parser.mjs"
   },
   "dependencies": {
-    "dompurify": "latest",
-    "markdown-it": "latest",
-    "markdown-it-anchor": "latest",
-    "shiki": "latest",
-    "vue": "latest",
-    "vue-router": "latest",
-    "yaml": "latest"
+    "dompurify": "^3.4.16",
+    "markdown-it": "^15.0.2",
+    "markdown-it-anchor": "^10.0.0",
+    "shiki": "^4.4.3",
+    "vue": "^3.5.43",
+    "vue-router": "^5.3.1",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@tailwindcss/typography": "latest",
-    "@tailwindcss/vite": "latest",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.3",
-    "@vitejs/plugin-vue": "latest",
+    "@vitejs/plugin-vue": "^6.0.9",
     "playwright": "^1.63.0",
-    "tailwindcss": "latest",
-    "typescript": "6.0.0-beta",
-    "vite": "latest",
-    "vue-tsc": "latest"
+    "tailwindcss": "^4.3.3",
+    "vite": "^8.3.1",
+    "vue-tsc": "^3.3.11",
+    "typescript": "^5.7.3"
   }
 }

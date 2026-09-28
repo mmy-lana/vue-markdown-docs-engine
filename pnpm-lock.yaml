@@ -9,54 +9,54 @@ importers:
   .:
     dependencies:
       dompurify:
-        specifier: latest
+        specifier: ^3.4.16
         version: 3.4.16
       markdown-it:
-        specifier: latest
+        specifier: ^15.0.2
         version: 15.0.2
       markdown-it-anchor:
-        specifier: latest
+        specifier: ^10.0.0
         version: 10.0.0(@types/markdown-it@14.2.0)(markdown-it@15.0.2)
       shiki:
-        specifier: latest
+        specifier: ^4.4.3
         version: 4.4.3
       vue:
-        specifier: latest
-        version: 3.5.43(typescript@6.0.0-beta)
+        specifier: ^3.5.43
+        version: 3.5.43(typescript@5.9.3)
       vue-router:
-        specifier: latest
-        version: 5.3.1(@vue/compiler-sfc@3.5.43)(rolldown@1.2.11)(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@6.0.0-beta))
+        specifier: ^5.3.1
+        version: 5.3.1(@vue/compiler-sfc@3.5.43)(rolldown@1.2.11)(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@5.9.3))
       yaml:
-        specifier: latest
+        specifier: ^2.9.1
         version: 2.9.1
     devDependencies:
       '@tailwindcss/typography':
-        specifier: latest
+        specifier: ^0.5.20
         version: 0.5.20(tailwindcss@4.3.3)
       '@tailwindcss/vite':
-        specifier: latest
+        specifier: ^4.3.3
         version: 4.3.3(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))
       '@types/node':
         specifier: ^26.6.3
         version: 26.6.3
       '@vitejs/plugin-vue':
-        specifier: latest
-        version: 6.0.9(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@6.0.0-beta))
+        specifier: ^6.0.9
+        version: 6.0.9(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@5.9.3))
       playwright:
         specifier: ^1.63.0
         version: 1.63.0
       tailwindcss:
-        specifier: latest
+        specifier: ^4.3.3
         version: 4.3.3
       typescript:
-        specifier: 6.0.0-beta
-        version: 6.0.0-beta
+        specifier: ^5.7.3
+        version: 5.9.3
       vite:
-        specifier: latest
+        specifier: ^8.3.1
         version: 8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1)
       vue-tsc:
-        specifier: latest
-        version: 3.3.11(typescript@6.0.0-beta)
+        specifier: ^3.3.11
+        version: 3.3.11(typescript@5.9.3)
 
 packages:
 
@@ -853,8 +853,8 @@ packages:
   trim-lines@3.0.1:
     resolution: {integrity: sha512-kRj8B+YHZCc9kQYdWfJB2/oUl9rA99qbowYYBtr4ui4mZyAQ2JpvVBd/6U2YloATfqBhBTSMhTpgBHtU0Mf3Rg==}
 
-  typescript@6.0.0-beta:
-    resolution: {integrity: sha512-CldZdztDpQRLM1HC6WDQjQkQN5Ub5zRau737a1diGh3lPmb9oRsaWHk1y5iqK0o7+1bNJ0oXfEGRkAogFZBL+Q==}
+  typescript@5.9.3:
+    resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
     engines: {node: '>=14.17'}
     hasBin: true
 
@@ -1244,11 +1244,11 @@ snapshots:
 
   '@ungap/structured-clone@1.4.0': {}
 
-  '@vitejs/plugin-vue@6.0.9(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@6.0.0-beta))':
+  '@vitejs/plugin-vue@6.0.9(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@5.9.3))':
     dependencies:
       '@rolldown/pluginutils': 1.0.1
       vite: 8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1)
-      vue: 3.5.43(typescript@6.0.0-beta)
+      vue: 3.5.43(typescript@5.9.3)
 
   '@volar/language-core@2.4.28':
     dependencies:
@@ -1256,15 +1256,15 @@ snapshots:
 
   '@volar/source-map@2.4.28': {}
 
-  '@volar/typescript@2.4.28(typescript@6.0.0-beta)':
+  '@volar/typescript@2.4.28(typescript@5.9.3)':
     dependencies:
       '@volar/language-core': 2.4.28
       path-browserify: 1.0.1
       vscode-uri: 3.2.0
     optionalDependencies:
-      typescript: 6.0.0-beta
+      typescript: 5.9.3
 
-  '@vue-macros/common@3.1.4(vue@3.5.43(typescript@6.0.0-beta))':
+  '@vue-macros/common@3.1.4(vue@3.5.43(typescript@5.9.3))':
     dependencies:
       '@vue/compiler-sfc': 3.5.43
       ast-kit: 2.2.0
@@ -1272,7 +1272,7 @@ snapshots:
       magic-string-ast: 1.0.3
       unplugin-utils: 0.3.2
     optionalDependencies:
-      vue: 3.5.43(typescript@6.0.0-beta)
+      vue: 3.5.43(typescript@5.9.3)
 
   '@vue/compiler-core@3.5.43':
     dependencies:
@@ -1743,7 +1743,7 @@ snapshots:
 
   trim-lines@3.0.1: {}
 
-  typescript@6.0.0-beta: {}
+  typescript@5.9.3: {}
 
   uc.micro@3.0.0: {}
 
@@ -1815,9 +1815,9 @@ snapshots:
 
   vscode-uri@3.2.0: {}
 
-  vue-router@5.3.1(@vue/compiler-sfc@3.5.43)(rolldown@1.2.11)(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@6.0.0-beta)):
+  vue-router@5.3.1(@vue/compiler-sfc@3.5.43)(rolldown@1.2.11)(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))(vue@3.5.43(typescript@5.9.3)):
     dependencies:
-      '@vue-macros/common': 3.1.4(vue@3.5.43(typescript@6.0.0-beta))
+      '@vue-macros/common': 3.1.4(vue@3.5.43(typescript@5.9.3))
       '@vue/devtools-api': 8.2.1
       ast-walker-scope: 0.9.0
       chokidar: 5.0.0
@@ -1833,7 +1833,7 @@ snapshots:
       tinyglobby: 0.2.17
       unplugin: 3.4.0(rolldown@1.2.11)(vite@8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1))
       unplugin-utils: 0.3.2
-      vue: 3.5.43(typescript@6.0.0-beta)
+      vue: 3.5.43(typescript@5.9.3)
     optionalDependencies:
       '@vue/compiler-sfc': 3.5.43
       vite: 8.3.1(@types/node@26.6.3)(jiti@2.7.0)(yaml@2.9.1)
@@ -1848,13 +1848,13 @@ snapshots:
       - unloader
       - webpack
 
-  vue-tsc@3.3.11(typescript@6.0.0-beta):
+  vue-tsc@3.3.11(typescript@5.9.3):
     dependencies:
-      '@volar/typescript': 2.4.28(typescript@6.0.0-beta)
+      '@volar/typescript': 2.4.28(typescript@5.9.3)
       '@vue/language-core': 3.3.11
-      typescript: 6.0.0-beta
+      typescript: 5.9.3
 
-  vue@3.5.43(typescript@6.0.0-beta):
+  vue@3.5.43(typescript@5.9.3):
     dependencies:
       '@vue/compiler-dom': 3.5.43
       '@vue/compiler-sfc': 3.5.43
@@ -1862,7 +1862,7 @@ snapshots:
       '@vue/server-renderer': 3.5.43
       '@vue/shared': 3.5.43
     optionalDependencies:
-      typescript: 6.0.0-beta
+      typescript: 5.9.3
 
   webpack-virtual-modules@0.6.2: {}
 
