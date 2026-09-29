@@ -35,6 +35,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'close'): void;
   (event: 'saved', doc: DocItem): void;
+  /** The id of a document that was just removed, for routing continuity. */
+  (event: 'deleted', docId: string): void;
 }>();
 
 const { docs, saveDoc, deleteDoc } = useDocStorage();
@@ -230,14 +232,20 @@ async function onSave(): Promise<void> {
 }
 
 function onDelete(): void {
-  if (props.docId === null) return;
+  const deletedId = props.docId;
+  if (deletedId === null) return;
 
   if (!isDeleteArmed.value) {
     isDeleteArmed.value = true;
     return;
   }
 
-  if (deleteDoc(props.docId)) {
+  // `deleteDoc` mutates the corpus synchronously, so by the time the shell
+  // receives this event the document is already gone and can no longer be
+  // resolved from the reactive corpus. The id is captured and emitted for that
+  // reason: the shell needs the identity of what went away, not a live lookup.
+  if (deleteDoc(deletedId)) {
+    emit('deleted', deletedId);
     emit('close');
     return;
   }

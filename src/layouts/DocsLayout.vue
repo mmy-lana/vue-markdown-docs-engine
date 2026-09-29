@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
+import { nextTick, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import DocHeader from '@/components/domain/DocHeader.vue';
 import DocSidebar from '@/components/domain/DocSidebar.vue';
@@ -20,12 +20,22 @@ import type { DocItem } from '@/types';
 
 const route = useRoute();
 const router = useRouter();
-const { activeDoc } = useDocNavigation();
+const { activeDoc, groups } = useDocNavigation();
 
 const isNavOpen = ref(false);
 const isSearchOpen = ref(false);
 const isEditorOpen = ref(false);
 const editingDocId = ref<string | null>(null);
+
+/**
+ * The document the composer was opened for, captured at open time.
+ *
+ * Deleting that document removes it from the corpus, after which neither
+ * `activeDoc` nor the composer can resolve it. Routing continuity therefore
+ * has to be decided against this snapshot rather than a live lookup, which
+ * would already be null by the time the shell hears about the deletion.
+ */
+const editingDocSnapshot = ref<DocItem | null>(null);
 
 /** The navigation rail, used to move and contain focus while the drawer is up. */
 const navRail = ref<HTMLElement | null>(null);
@@ -53,13 +63,6 @@ function getDrawerFocusableElements(): HTMLElement[] {
   );
 }
 
-/** The document being edited, resolved outside the modal for the open state. */
-const editingDoc = computed<DocItem | null>(
-  () => activeDoc.value !== null && editingDocId.value === activeDoc.value.id
-    ? activeDoc.value
-    : null
-);
-
 function openSearch(): void {
   isNavOpen.value = false;
   isSearchOpen.value = true;
@@ -67,8 +70,44 @@ function openSearch(): void {
 
 function openEditorForCurrentDoc(): void {
   isNavOpen.value = false;
+  editingDocSnapshot.value = activeDoc.value;
   editingDocId.value = activeDoc.value?.id ?? null;
   isEditorOpen.value = true;
+}
+
+function closeEditor(): void {
+  isEditorOpen.value = false;
+  editingDocId.value = null;
+  editingDocSnapshot.value = null;
+}
+
+/** Where a reader lands once the document they were reading is gone. */
+function deletionFallbackSlug(): string {
+  const published = groups.value.flatMap((group) => group.items);
+  const preferred = published.find((link) => link.slug === 'getting-started');
+  return preferred?.slug ?? published[0]?.slug ?? 'getting-started';
+}
+
+/**
+ * Keeps the reader off a dead URL after their document is deleted.
+ *
+ * Deleting the document currently on screen leaves the router parked on its
+ * slug, which now resolves to the not-found state. The reader is moved to the
+ * entry document instead, so the deletion reads as a navigation rather than as
+ * a dead end.
+ */
+function handleDeleted(deletedId: string): void {
+  const snapshot = editingDocSnapshot.value;
+  const wasActive =
+    snapshot !== null &&
+    snapshot.id === deletedId &&
+    route.params['slug'] === snapshot.slug;
+
+  if (wasActive) {
+    void router.push(`/docs/${deletionFallbackSlug()}`);
+  }
+
+  closeEditor();
 }
 
 /**
@@ -80,6 +119,7 @@ function openEditorForCurrentDoc(): void {
  * skipped.
  */
 function handleSaved(doc: DocItem): void {
+  closeEditor();
   if (route.params['slug'] === doc.slug) return;
   void router.push(`/docs/${doc.slug}`);
 }
@@ -288,9 +328,10 @@ onUnmounted(() => {
 
     <DocEditorModal
       :is-open="isEditorOpen"
-      :doc-id="editingDoc?.id ?? null"
-      @close="isEditorOpen = false"
+      :doc-id="editingDocId"
+      @close="closeEditor"
       @saved="handleSaved"
+      @deleted="handleDeleted"
     />
   </div>
 </template>

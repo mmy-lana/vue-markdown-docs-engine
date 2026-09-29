@@ -22,6 +22,22 @@ const MAX_FENCE_RUN = 3;
 /** Heading levels that are surfaced in the table of contents and search index. */
 const TRACKED_HEADING_LEVELS = new Set<number>([2, 3, 4]);
 
+/**
+ * Property names that must never appear in frontmatter.
+ *
+ * `__proto__` and `constructor` are reachable from any object, so a document
+ * that declares either shadows inherited lookups on the parsed object: with
+ * `constructor: evil` in the block, `parsed.constructor` resolves to a string
+ * rather than to `Object`. `prototype` is rejected alongside them because it
+ * only ever appears in an attack.
+ *
+ * The parser already produces these as own properties without mutating
+ * `Object.prototype`, so this is defence in depth rather than a repair of a
+ * live pollution. It closes the gap that matters: document-supplied keys
+ * flowing into enumeration, spreading and serialisation.
+ */
+const FORBIDDEN_FRONTMATTER_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
 /** Class applied to every rendered heading so it clears the sticky header. */
 const HEADING_CLASS = 'doc-heading';
 
@@ -146,6 +162,35 @@ function splitFrontmatter(rawContent: string): { yamlBlock: string; body: string
 }
 
 /**
+ * Rejects a parsed frontmatter object that could reach `Object.prototype`
+ * through its own keys or through a replaced prototype.
+ *
+ * Exported so the verification suite can drive the real guard with a crafted
+ * object. Restating the rule inside the test would prove only that the test
+ * agrees with itself: a divergence between the copy and the parser would leave
+ * the shipped behaviour untested and the suite green.
+ *
+ * @throws {Error} When a forbidden key is an own property, or when the parsed
+ * object carries a prototype other than `Object.prototype` or `null`.
+ */
+export function assertSafeFrontmatterObject(parsedYaml: object): void {
+  // Own *and* non-enumerable names, so a deliberately hidden key cannot slip
+  // past a check that only looked at Object.keys.
+  for (const key of Object.getOwnPropertyNames(parsedYaml)) {
+    if (FORBIDDEN_FRONTMATTER_KEYS.has(key)) {
+      throw new Error(`Frontmatter contains forbidden property name: "${key}".`);
+    }
+  }
+
+  // A replaced prototype is the shape a successful pollution attempt takes,
+  // so it is rejected even when no forbidden key is present as an own property.
+  const prototype = Object.getPrototypeOf(parsedYaml);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new Error('Frontmatter parsed to an object with a replaced prototype.');
+  }
+}
+
+/**
  * Splits a document into its YAML frontmatter and markdown body, validating
  * every field the engine depends on.
  *
@@ -167,6 +212,10 @@ export function extractFrontmatterSync(rawContent: string): ParsedMarkdown {
   if (typeof parsedYaml !== 'object' || parsedYaml === null || Array.isArray(parsedYaml)) {
     throw new Error('Frontmatter is not a valid YAML mapping.');
   }
+
+  // Own *and* non-enumerable names, so a deliberately hidden key cannot slip
+  // past a check that only looked at Object.keys.
+  assertSafeFrontmatterObject(parsedYaml);
 
   const raw = parsedYaml as Record<string, unknown>;
 

@@ -16,6 +16,9 @@ export default defineConfig({
     }
   },
   build: {
+    // Wipe the previous fixture build first, so a renamed or removed chunk
+    // cannot be served from a stale artifact.
+    emptyOutDir: true,
     outDir: 'tests/.modal-dist',
     rollupOptions: {
       input: {

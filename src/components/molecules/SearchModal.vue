@@ -203,84 +203,93 @@ watch(visibleItems, () => {
       <p class="sr-only" role="status" aria-live="polite">{{ statusMessage }}</p>
 
       <div class="min-h-0 flex-1 overflow-y-auto p-2">
-        <ul
+        <!--
+          APG select-only combobox: the text field keeps DOM focus and
+          `aria-activedescendant` points at the active option, so the options
+          are not focusable themselves and are not buttons.
+
+          A native button carrying `role="option"` leaves button semantics
+          underneath the override, which several screen readers surface
+          alongside the option role. The list is also plain `div`s rather than
+          a `ul` of `li`s, because a listbox may only own options, and an
+          un-annotated `li` between them breaks that required-owned-elements
+          relationship.
+        -->
+        <div
           v-if="visibleItems.length > 0"
           :id="listboxId"
           role="listbox"
           aria-label="Search results"
           class="space-y-1"
         >
-          <li v-for="(result, index) in visibleItems" :key="result.docId + (result.anchor ?? '')">
-            <button
-              :id="`${listboxId}-option-${index}`"
-              type="button"
-              role="option"
-              :aria-selected="index === activeIndex"
-              :data-testid="`search-result-${index}`"
-              class="flex min-h-11 w-full flex-col items-start gap-1 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-              :class="
-                index === activeIndex
-                  ? 'bg-brand-50 dark:bg-brand-500/10'
-                  : 'hover:bg-slate-100 dark:hover:bg-slate-800'
-              "
-              @click="openResult(result, query.trim())"
-              @mousemove="activeIndex = index"
-            >
-              <span class="flex w-full items-center gap-2">
-                <span
-                  class="truncate text-sm font-medium text-slate-900 dark:text-slate-100"
-                  :class="result.anchor ? '' : 'text-brand-600 dark:text-brand-500'"
-                >
-                  {{ result.title }}
-                </span>
-                <BaseBadge tone="neutral" size="sm" class="ml-auto shrink-0">
-                  {{ result.category }}
-                </BaseBadge>
+          <div
+            v-for="(result, index) in visibleItems"
+            :id="`${listboxId}-option-${index}`"
+            :key="result.docId + (result.anchor ?? '')"
+            role="option"
+            :aria-selected="index === activeIndex"
+            :data-testid="`search-result-${index}`"
+            tabindex="-1"
+            class="flex min-h-11 w-full cursor-pointer select-none flex-col items-start gap-1 rounded-lg px-3 py-2 text-left transition-colors"
+            :class="
+              index === activeIndex
+                ? 'bg-brand-50 dark:bg-brand-500/10'
+                : 'hover:bg-slate-100 dark:hover:bg-slate-800'
+            "
+            @click="openResult(result, query.trim())"
+            @mousemove="activeIndex = index"
+          >
+            <span class="flex w-full items-center gap-2">
+              <span
+                class="truncate text-sm font-medium text-slate-900 dark:text-slate-100"
+                :class="result.anchor ? '' : 'text-brand-600 dark:text-brand-500'"
+              >
+                {{ result.title }}
               </span>
-              <span class="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                {{ result.matchedText }}
-              </span>
-            </button>
-          </li>
-        </ul>
+              <BaseBadge tone="neutral" size="sm" class="ml-auto shrink-0">
+                {{ result.category }}
+              </BaseBadge>
+            </span>
+            <span class="line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+              {{ result.matchedText }}
+            </span>
+          </div>
+        </div>
 
-        <div
-          v-else-if="showRecentSearches"
-          :id="listboxId"
-          role="listbox"
-          aria-label="Recent searches"
-          class="space-y-1"
-        >
+        <div v-else-if="showRecentSearches" class="space-y-1">
           <p class="px-3 pt-2 pb-1 text-xs font-semibold tracking-wide text-slate-500 uppercase dark:text-slate-400">
             Recent searches
           </p>
-          <button
-            v-for="(term, index) in recentSearches"
-            :id="`${listboxId}-option-${index}`"
-            :key="term"
-            type="button"
-            role="option"
-            :aria-selected="false"
-            :data-testid="`recent-search-${index}`"
-            class="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:text-slate-300 dark:hover:bg-slate-800"
-            @click="openRecentSearch(term)"
-          >
-            <svg
-              aria-hidden="true"
-              class="size-4 shrink-0 text-slate-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              stroke-width="2"
+
+          <div :id="listboxId" role="listbox" aria-label="Recent searches" class="space-y-1">
+            <div
+              v-for="(term, index) in recentSearches"
+              :id="`${listboxId}-option-${index}`"
+              :key="term"
+              role="option"
+              :aria-selected="false"
+              :data-testid="`recent-search-${index}`"
+              tabindex="-1"
+              class="flex min-h-11 w-full cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+              @click="openRecentSearch(term)"
             >
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
-            {{ term }}
-          </button>
+              <svg
+                aria-hidden="true"
+                class="size-4 shrink-0 text-slate-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              {{ term }}
+            </div>
+          </div>
         </div>
 
         <div

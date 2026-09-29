@@ -410,9 +410,49 @@ const noHorizontalScroll = (page) =>
   check('the active result is marked selected',
     (await page.getAttribute('[role="option"]', 'aria-selected')) === 'true');
 
+  const optionSemantics = await page.evaluate(() =>
+    [...document.querySelectorAll('[role="option"]')].map((el) => ({
+      tag: el.tagName,
+      tabindex: el.getAttribute('tabindex'),
+      hasNestedButton: el.querySelector('button') !== null
+    }))
+  );
+  check('search options are div elements, not buttons',
+    optionSemantics.length > 0 && optionSemantics.every((o) => o.tag === 'DIV'),
+    JSON.stringify(optionSemantics.slice(0, 2)));
+  check('search options carry tabindex="-1" so they are not in the tab order',
+    optionSemantics.every((o) => o.tabindex === '-1'), JSON.stringify(optionSemantics.slice(0, 2)));
+  check('search options contain no nested interactive control',
+    optionSemantics.every((o) => !o.hasNestedButton), JSON.stringify(optionSemantics.slice(0, 2)));
+  check('no button carries an option role anywhere in the palette',
+    await page.evaluate(() => document.querySelectorAll('button[role="option"]').length) === 0);
+  check('the listbox owns its options directly',
+    await page.evaluate(() => {
+      const listbox = document.querySelector('[role="listbox"]');
+      if (listbox === null) return false;
+      return [...listbox.children].every((child) => child.getAttribute('role') === 'option');
+    }));
+
   await page.keyboard.press('ArrowDown');
   const afterArrow = await page.evaluate(() => document.querySelectorAll('[aria-selected="true"]').length);
   check('arrow keys move the virtual cursor', afterArrow === 1);
+
+  const cursor = await page.evaluate(() => {
+    const input = document.getElementById('search-modal-input');
+    const id = input?.getAttribute('aria-activedescendant');
+    if (input === null || id === null) return { focused: document.activeElement?.id, id: null, exists: false };
+    const target = document.getElementById(id);
+    return {
+      focused: document.activeElement?.id,
+      id,
+      exists: target !== null,
+      selected: target?.getAttribute('aria-selected')
+    };
+  });
+  check('DOM focus never leaves the text field while the cursor moves',
+    cursor.focused === 'search-modal-input', JSON.stringify(cursor));
+  check('aria-activedescendant resolves to a real option',
+    cursor.exists === true && cursor.selected === 'true', JSON.stringify(cursor));
 
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => !document.querySelector('[role="dialog"]'));
@@ -706,6 +746,37 @@ const noHorizontalScroll = (page) =>
   check('the document is gone from storage', !afterDelete.present);
   check('a deletion tombstone was recorded', afterDelete.hasTombstone, JSON.stringify(afterDelete));
 
+  // Routing continuity. Deleting the document the reader is on must not leave
+  // the router parked on a slug that now resolves to the not-found state.
+  //
+  // The landing document is not asserted as a fixed slug. The composer saves
+  // by document id, so publishing above repurposed the seed it was opened on:
+  // that document kept its id and adopted the new slug, and the original entry
+  // document no longer exists. The invariant that matters is therefore that the
+  // reader is moved off the dead slug onto one that resolves, which is checked
+  // against the persisted corpus rather than against a hard-coded route.
+  await page.waitForSelector('[data-testid="doc-content"], [data-testid="doc-not-found"]');
+  await page.waitForTimeout(500);
+
+  check('deleting the active document redirects away from the dead slug',
+    !page.url().includes(`/${unique}`), page.url());
+
+  const landedSlug = new URL(page.url()).pathname.replace(/^\/docs\//, '');
+  const landing = await page.evaluate((slug) => {
+    const payload = JSON.parse(localStorage.getItem('vue_docs_engine_v1') ?? '{}');
+    const exists = (payload.docs ?? []).some((d) => d.slug === slug);
+    return {
+      exists,
+      title: document.querySelector('[data-testid="doc-title"]')?.textContent?.trim() ?? 'none',
+      notFound: document.querySelector('[data-testid="doc-not-found"]') !== null
+    };
+  }, landedSlug);
+
+  check('the reader lands on a document that exists in the corpus', landing.exists, landedSlug);
+  check('the landing document rendered instead of the not-found state',
+    landing.exists && !landing.notFound && landing.title !== 'none',
+    JSON.stringify({ slug: landedSlug, ...landing }));
+
   await page.goto(`${base}/docs/${unique}`);
   await page.waitForSelector('[data-testid="doc-not-found"]', { timeout: 10000 });
   check('the deleted document is not resurrected by reconciliation', true);
@@ -777,7 +848,50 @@ const noHorizontalScroll = (page) =>
         .some((d) => d.slug === 'oversized-doc')
     ) === false);
 
-  // 2. Link protocols. Written as a document, so the assertions exercise the
+  // 2. Prototype pollution. A hostile document is authored through the real
+  //    composer, so the guard is exercised on the same path a reader's
+  //    content takes rather than only in isolation.
+  const hostileFrontmatter = [
+    '---',
+    'title: Polluted',
+    'category: Operations',
+    'slug: polluted-doc',
+    '__proto__:',
+    '  polluted: true',
+    '---',
+    '',
+    '# Body',
+    ''
+  ].join('\n');
+
+  await page.evaluate((value) => {
+    const field = document.getElementById('editor-source');
+    if (field === null) throw new Error('composer field is not mounted');
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+    setter.call(field, value);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+  }, hostileFrontmatter);
+
+  await page.waitForSelector('[data-testid="preview-error"], [data-testid="save-error"]', { timeout: 20_000 });
+  await page.locator('[data-testid="editor-save"]').click();
+  await page.waitForSelector('[data-testid="save-error"]', { timeout: 15_000 });
+
+  const pollutionError = (await page.locator('[data-testid="save-error"]').textContent())?.trim();
+  check('a document declaring __proto__ is rejected with the documented message',
+    pollutionError === 'Frontmatter contains forbidden property name: "__proto__".', String(pollutionError));
+  check('the hostile document is not persisted',
+    await page.evaluate(() =>
+      (JSON.parse(localStorage.getItem('vue_docs_engine_v1') ?? '{}').docs ?? [])
+        .some((d) => d.slug === 'polluted-doc')
+    ) === false);
+  check('Object.prototype is not polluted in the page',
+    await page.evaluate(() => ({}).polluted === undefined && Object.prototype.polluted === undefined));
+  check('the composer stays open so the author can correct the block',
+    await page.locator('[data-testid="editor-modal"]').isVisible());
+  // The composer deliberately stays open: the next scenario only replaces the
+  // buffer in the same session.
+
+  // 3. Link protocols. Written as a document, so the assertions exercise the
   //    same path a reader's content takes.
   const hostile = [
     '[protocol relative](//malicious.example)',

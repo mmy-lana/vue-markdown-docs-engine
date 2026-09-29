@@ -98,6 +98,36 @@ const linkTarget = await page.evaluate(() => {
 });
 check('external links survive sanitization', linkTarget === 'https://example.com', String(linkTarget));
 
+console.log('\n[prototype pollution defense]');
+// The parser is reached through the bundled page rather than a Node import:
+// `@` is a Vite alias and does not resolve outside the bundler. The calls
+// below therefore execute the same module the application ships.
+const probeFrontmatter = (raw) =>
+  page.evaluate((source) => window.__probe.probeFrontmatter(source), raw);
+
+for (const key of ['__proto__', 'constructor', 'prototype']) {
+  const source = `---\ntitle: A\ncategory: B\nslug: a-b\n${key}: malicious\n---\n# Body\n`;
+  const result = await probeFrontmatter(source);
+  check(`frontmatter declaring ${key} is rejected`,
+    !result.ok && result.message.includes('forbidden property name'), JSON.stringify(result));
+  check(`the ${key} error names the offending key`, result.message.includes(key), result.message);
+}
+
+const legitimate = await probeFrontmatter('---\ntitle: A\ncategory: B\nslug: a-b\n---\n# Body\n');
+check('a legitimate frontmatter block still parses', legitimate.ok && legitimate.title === 'A', JSON.stringify(legitimate));
+
+check('a non-mapping frontmatter block is rejected',
+  !(await probeFrontmatter('---\n- a\n- b\n---\n# Body\n')).ok);
+check('a missing fence is rejected',
+  !(await probeFrontmatter('# Body, no frontmatter at all\n')).ok);
+
+check('Object.prototype was not polluted by any of the above',
+  (await page.evaluate(() => window.__probe.isPrototypePolluted())) === false);
+
+const replaced = await page.evaluate(() => window.__probe.probeReplacedPrototype());
+check('a polluted prototype is rejected even without a forbidden key',
+  !replaced.ok && replaced.message.includes('replaced prototype'), JSON.stringify(replaced));
+
 console.log('\n[seed corpus]');
 check('all seven seeds compiled', r.seeds.length === 7, String(r.seeds.length));
 for (const s of r.seeds) {
