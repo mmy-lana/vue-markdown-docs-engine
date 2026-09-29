@@ -1352,7 +1352,7 @@ function handleContentClick(event: MouseEvent) {
       <p class="mt-2 text-slate-600 dark:text-slate-400">The requested documentation page does not exist or was removed.</p>
     </div>
 
-    <article v-else class="min-w-0 break-words">
+    <article v-else class="min-w-0 wrap-break-word">
       <Breadcrumb :category="compiled.category" :title="compiled.title" />
 
       <header class="mt-4 pb-6 border-b border-slate-200 dark:border-slate-800">
